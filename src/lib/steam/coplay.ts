@@ -61,20 +61,24 @@ async function fetchReviewerIds(appid: number): Promise<string[]> {
   return ids;
 }
 
-async function fetchLibraryBare(
-  steamid: string,
-): Promise<{ appid: number; playtime_forever: number }[] | null> {
+type LibraryResult =
+  | { status: "ok"; games: { appid: number; playtime_forever: number }[] }
+  | { status: "private" }
+  | { status: "error" }; // 일시 장애 — 표본 실패와 비공개를 구분해야 캐시 오염을 막는다
+
+async function fetchLibraryBare(steamid: string): Promise<LibraryResult> {
   const key = process.env.STEAM_API_KEY;
   if (!key) throw new Error("STEAM_API_KEY 미설정 — co-play 수집 불가");
   const params = new URLSearchParams({ key, steamid, include_played_free_games: "1" });
   const res = await fetch(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?${params}`, {
     signal: AbortSignal.timeout(12_000),
   });
-  if (!res.ok) return null; // 개별 유저 조회 실패는 표본에서 제외할 뿐
+  if (!res.ok) return { status: "error" };
   const data = (await res.json()) as {
     response: { games?: { appid: number; playtime_forever: number }[] };
   };
-  return data.response.games ?? null; // undefined = 비공개
+  if (data.response.games === undefined) return { status: "private" };
+  return { status: "ok", games: data.response.games };
 }
 
 export async function getCoplaySample(anchorAppid: number): Promise<CoplaySample> {
@@ -85,12 +89,19 @@ export async function getCoplaySample(anchorAppid: number): Promise<CoplaySample
   const reviewerIds = await fetchReviewerIds(anchorAppid);
   const libraries = await mapWithConcurrency(reviewerIds, 8, fetchLibraryBare);
 
+  // 일시 장애(HTTP 오류/타임아웃)가 과반이면 결과를 캐시에 남기지 않는다 —
+  // 7~30일 공유 캐시에 빈약한 표본이 고정되는 것을 방지 (throw → 캐시 안 됨)
+  const errorCount = libraries.filter((r) => r === null || r.status === "error").length;
+  if (reviewerIds.length > 0 && errorCount > reviewerIds.length / 2) {
+    throw new Error(`co-play 표본 수집 실패: ${errorCount}/${reviewerIds.length} 오류 (appid ${anchorAppid})`);
+  }
+
   const counts = new Map<number, number>();
   let sampleSize = 0;
   for (const lib of libraries) {
-    if (!lib || lib.length === 0) continue; // 비공개/실패/빈 라이브러리 제외
+    if (!lib || lib.status !== "ok" || lib.games.length === 0) continue; // 비공개/실패/빈 라이브러리 제외
     sampleSize++;
-    for (const g of lib) {
+    for (const g of lib.games) {
       if (g.appid === anchorAppid) continue;
       if (g.playtime_forever < MIN_COPLAY_MINUTES) continue;
       counts.set(g.appid, (counts.get(g.appid) ?? 0) + 1);

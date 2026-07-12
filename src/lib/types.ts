@@ -52,6 +52,7 @@ export interface AppDetails {
 
 export interface FeaturedItem {
   id: number;
+  type: number; // 0 = 앱(게임), 그 외 = 패키지/번들 등
   name: string;
   discounted: boolean;
   discount_percent: number;
@@ -88,6 +89,7 @@ export interface SteamSpyApp {
   average_forever: number; // 분
   median_forever: number; // 분
   ccu: number;
+  genre: string; // "Action, Indie" 콤마 구분 문자열
   tags: Record<string, number>; // 태그 → 투표수 (없으면 빈 배열로 옴)
 }
 

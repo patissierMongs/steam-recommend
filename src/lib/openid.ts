@@ -10,6 +10,16 @@ const OPENID_NS = "http://specs.openid.net/auth/2.0";
 const IDENTIFIER_SELECT = "http://specs.openid.net/auth/2.0/identifier_select";
 const CLAIMED_ID_RE = /^https:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/;
 
+/**
+ * OpenID realm/return_to의 베이스 URL 결정.
+ * APP_BASE_URL이 설정돼 있으면 그 값(신뢰), 아니면 요청 origin으로 폴백한다.
+ * 리버스 프록시 뒤에서 Host 스푸핑이 우려되면 APP_BASE_URL을 반드시 설정할 것.
+ * (로그인 후 리다이렉트는 항상 상대 경로 `/u/{steamid}`라 open redirect는 발생하지 않는다.)
+ */
+export function appBaseUrl(requestOrigin: string): string {
+  return process.env.APP_BASE_URL || requestOrigin;
+}
+
 export function buildLoginUrl(baseUrl: string): string {
   const params = new URLSearchParams({
     "openid.ns": OPENID_NS,
@@ -34,12 +44,28 @@ export async function verifyCallback(
   searchParams: URLSearchParams,
   expectedBaseUrl: string,
 ): Promise<string | null> {
+  // 파라미터 중복 스머글링 차단: get()은 첫 값을 읽지만 재전송 body는 set()으로
+  // 마지막 값이 이긴다 — 값이 갈리면 "검증된 값 ≠ 파싱한 값"이 되어 계정 위조가 가능.
+  // openid.* 키가 두 번 이상 등장하면 무조건 거부한다.
+  const keys = [...new Set([...searchParams.keys()])];
+  for (const key of keys) {
+    if (key.startsWith("openid.") && searchParams.getAll(key).length !== 1) return null;
+  }
+
   if (searchParams.get("openid.mode") !== "id_res") return null;
   const returnTo = searchParams.get("openid.return_to");
   if (returnTo !== `${expectedBaseUrl}/api/auth/steam/return`) return null;
   const claimedId = searchParams.get("openid.claimed_id");
   const steamid = claimedId?.match(CLAIMED_ID_RE)?.[1];
   if (!steamid) return null;
+
+  // 오래된 assertion 재사용 방지(심층 방어): response_nonce 선두는 UTC 타임스탬프다
+  // (예: "2026-07-12T16:14:16Z" + 고유 솔트). 1차 방어는 Steam의 nonce 1회 검증(§11.3),
+  // 여기선 발급 15분 초과만 컷한다.
+  const nonce = searchParams.get("openid.response_nonce");
+  const isoMatch = nonce?.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/);
+  const issuedAt = isoMatch ? Date.parse(isoMatch[0]) : NaN;
+  if (!Number.isFinite(issuedAt) || Math.abs(Date.now() - issuedAt) > 15 * 60 * 1000) return null;
 
   // 받은 파라미터 전체를 mode만 바꿔 그대로 되돌려 보낸다 (OpenID 2.0 §11.4.2)
   const body = new URLSearchParams();

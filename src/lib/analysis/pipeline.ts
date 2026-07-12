@@ -164,7 +164,7 @@ export const getCoplayRecs = cache(async (steamid: string): Promise<CoplayAnchor
 
     const candidateIds = sample.counts
       .filter((c) => c.count >= 3 && !analysis.ownedAppids.has(c.appid))
-      .slice(0, 40);
+      .slice(0, 25); // 앵커당 SteamSpy fan-out 상한 (예의)
     const facts = await getManyScoringFacts(
       candidateIds.map((c) => ({ appid: c.appid })),
       SPY_CONCURRENCY,

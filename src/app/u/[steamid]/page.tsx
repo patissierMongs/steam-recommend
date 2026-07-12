@@ -65,8 +65,8 @@ async function Dashboard({ steamid }: { steamid: string }) {
 
   if (!analysis) {
     return (
-      <NoticeCard title="라이브러리가 비공개입니다">
-        이 프로필은 게임 상세 정보가 비공개라 라이브러리를 분석할 수 없습니다. 본인 프로필이라면
+      <NoticeCard title="라이브러리를 분석할 수 없습니다">
+        이 프로필은 게임 상세 정보가 비공개이거나 라이브러리가 비어 있습니다. 본인 프로필이라면
         Steam <strong>프로필 편집 → 프라이버시 설정 → 게임 상세 정보</strong>를
         &ldquo;공개&rdquo;로 바꾼 뒤 다시 시도해주세요.
       </NoticeCard>

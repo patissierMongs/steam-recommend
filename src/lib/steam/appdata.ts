@@ -3,6 +3,7 @@ import { cacheLife, cacheTag } from "next/cache";
 import type { AppDetails, GameFacts, SteamSpyApp } from "@/lib/types";
 import { parseOwnersMidpoint } from "@/lib/analysis/stats";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { throttleSteamSpy, throttleStore } from "@/lib/steam/ratelimit";
 
 /**
  * appid 단위 게임 데이터 — 사용자와 무관하므로 'use cache'로 서버 캐시.
@@ -19,6 +20,7 @@ export async function getSpyApp(appid: number): Promise<SteamSpyApp | null> {
   "use cache";
   cacheLife({ stale: 3600, revalidate: DAY, expire: 7 * DAY });
   cacheTag(`spy-${appid}`);
+  await throttleSteamSpy();
   const res = await fetch(`https://steamspy.com/api.php?request=appdetails&appid=${appid}`, {
     signal: AbortSignal.timeout(12_000),
   });
@@ -38,6 +40,7 @@ export async function getStoreApp(appid: number): Promise<AppDetails | null> {
   "use cache";
   cacheLife({ stale: 3600, revalidate: DAY, expire: 7 * DAY });
   cacheTag(`store-${appid}`);
+  await throttleStore();
   const params = new URLSearchParams({
     appids: String(appid),
     cc: "KR",
@@ -82,7 +85,7 @@ function factsFromSpy(appid: number, spy: SteamSpyApp): GameFacts {
     appid,
     name: spy.name,
     tags: spy.tags,
-    genres: [],
+    genres: (spy.genre ?? "").split(",").map((s) => s.trim()).filter(Boolean),
     positive: spy.positive ?? 0,
     negative: spy.negative ?? 0,
     ownersEstimate: parseOwnersMidpoint(spy.owners ?? ""),
@@ -100,7 +103,7 @@ function factsFromSpy(appid: number, spy: SteamSpyApp): GameFacts {
 }
 
 function mergeStore(facts: GameFacts, store: AppDetails): GameFacts {
-  const genres = store.genres?.map((g) => g.description) ?? [];
+  const genres = store.genres?.length ? store.genres.map((g) => g.description) : facts.genres;
   // SteamSpy 태그가 없으면 상점 장르를 균등 가중 의사-태그로 폴백
   const tags =
     Object.keys(facts.tags).length > 0
