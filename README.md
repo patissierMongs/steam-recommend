@@ -37,7 +37,7 @@ npm run dev
 | 키 | 설명 |
 | --- | --- |
 | `STEAM_API_KEY` | https://steamcommunity.com/dev/apikey 에서 발급 (라이브러리 조회·co-play에 필수) |
-| `NEXT_PUBLIC_BASE_URL` | OpenID `return_to` 콜백 베이스 URL (예: `http://localhost:3000`) |
+| `APP_BASE_URL` | OpenID `return_to` 콜백 베이스 URL (예: `http://localhost:3000`). 미설정 시 요청 origin 사용 |
 | `SESSION_SECRET` | 세션 쿠키 HMAC 서명용 랜덤 문자열 (16자 이상) |
 
 ## 알려진 제약

@@ -51,14 +51,26 @@ interface Scored {
   extra?: Partial<Recommendation>;
 }
 
+/**
+ * null(리뷰 없음)을 제외한 값들로만 z-분포를 만든다 — null을 0으로 섞으면
+ * 분포의 평균/분산이 왜곡돼 리뷰 있는 후보들의 z-점수까지 오염된다.
+ * null 항은 z=0(중립)으로 둔다.
+ */
+function zScoresWithNulls(values: readonly (number | null)[]): number[] {
+  const present = values.filter((v): v is number => v !== null);
+  const z = zScores(present);
+  let j = 0;
+  return values.map((v) => (v === null ? 0 : z[j++]));
+}
+
 /** z-정규화 가중합으로 최종 점수화. wlb가 null인 후보는 품질 항 0(중립) 처리. */
 function rank(model: TasteModel, scored: Scored[], wTaste: number, wQuality: number, limit: number): Recommendation[] {
   if (scored.length === 0) return [];
   const zTaste = zScores(scored.map((s) => s.taste));
-  const zQual = zScores(scored.map((s) => s.wlb ?? 0));
+  const zQual = zScoresWithNulls(scored.map((s) => s.wlb));
   return scored
     .map((s, i) => {
-      const score = wTaste * zTaste[i] + wQuality * (s.wlb === null ? 0 : zQual[i]);
+      const score = wTaste * zTaste[i] + wQuality * zQual[i];
       return toRecommendation(
         s.facts,
         score,
@@ -130,7 +142,7 @@ export function rankLapsed(
   return rank(model, scored, 0.65, 0.35, limit);
 }
 
-/** ③ 신작 추천 — 미보유 후보 풀 (featured), 신선도 보너스 포함 */
+/** ③ 신작 추천 — 미보유 featured 후보 풀 (풀 자체가 최신이라 별도 신선도 항 없음) */
 export function rankNewReleases(
   model: TasteModel,
   candidates: GameFacts[],
@@ -199,10 +211,10 @@ export function rankCoplay(
   const tastes = pool.map((c) => tasteOf(model, c.facts));
   const zTaste = zScores(tastes);
   const wlbs = pool.map((c) => quality(c.facts));
-  const zQual = zScores(wlbs.map((w) => w ?? 0));
+  const zQual = zScoresWithNulls(wlbs);
   return pool
     .map((c, i) =>
-      toRecommendation(c.facts, 0.55 * zLift[i] + 0.3 * zTaste[i] + 0.15 * (wlbs[i] === null ? 0 : zQual[i]), {
+      toRecommendation(c.facts, 0.55 * zLift[i] + 0.3 * zTaste[i] + 0.15 * zQual[i], {
         tasteMatch: tastes[i],
         quality: wlbs[i],
         lift: Math.exp(c.logLift),

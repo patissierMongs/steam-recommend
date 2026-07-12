@@ -23,6 +23,7 @@ function pick(items: FeaturedItem[] | undefined): { appid: number; name: string 
   const out: { appid: number; name: string }[] = [];
   for (const item of items ?? []) {
     if (!item?.id || seen.has(item.id)) continue;
+    if (item.type !== 0) continue; // 패키지/번들 id는 appdetails/SteamSpy appid가 아니다
     seen.add(item.id);
     out.push({ appid: item.id, name: item.name });
   }
