@@ -17,9 +17,18 @@ function formatPlaytime(minutes: number): string {
   return `${(minutes / 60).toFixed(1)}시간`;
 }
 
+// UTC 고정 포맷: 클라이언트 컴포넌트는 SSR도 되므로, 서버 TZ와 브라우저 TZ가 다르면
+// toLocaleDateString이 hydration mismatch를 낸다. timeZone을 고정해 결정적으로 만든다.
+const DATE_FMT = new Intl.DateTimeFormat("ko-KR", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  timeZone: "UTC",
+});
+
 function formatLastPlayed(unixSec: number): string {
   if (!unixSec) return "—";
-  return new Date(unixSec * 1000).toLocaleDateString("ko-KR");
+  return DATE_FMT.format(new Date(unixSec * 1000));
 }
 
 export function LibraryExplorer({ rows }: { rows: LibraryRow[] }) {
@@ -59,6 +68,7 @@ export function LibraryExplorer({ rows }: { rows: LibraryRow[] }) {
           className="min-w-0 flex-1 rounded-lg border border-edge bg-background px-3 py-2 text-sm outline-none placeholder:text-muted/70 focus:border-accent"
         />
         <select
+          aria-label="정렬 기준"
           value={sortKey}
           onChange={(e) => setSortKey(e.target.value as SortKey)}
           className="rounded-lg border border-edge bg-background px-3 py-2 text-sm outline-none focus:border-accent"
