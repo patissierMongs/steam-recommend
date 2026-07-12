@@ -2,6 +2,7 @@
 
 /* Steam 다크 테마에 커밋한 단일 모드 팔레트 */
 :root {
+  color-scheme: dark; /* 스크롤바·select 드롭다운 등 UA 위젯을 다크로 */
   --background: #171a21;
   --surface: #1b2838;
   --surface-raised: #223044;

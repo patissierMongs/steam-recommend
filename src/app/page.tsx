@@ -97,7 +97,8 @@ export default function Home({ searchParams }: { searchParams: SearchParams }) {
 async function ErrorBanner({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const code = typeof params.error === "string" ? params.error : null;
-  if (!code || !(code in ERROR_MESSAGES)) return null;
+  // Object.hasOwn: `"__proto__" in obj` 등 프로토타입 체인 매칭으로 객체가 렌더되어 크래시하는 것 방지
+  if (!code || !Object.hasOwn(ERROR_MESSAGES, code)) return null;
   return (
     <div className="mx-auto mt-8 max-w-xl rounded-lg border border-red-400/40 bg-red-950/40 px-4 py-3 text-sm text-red-200">
       {ERROR_MESSAGES[code]}
