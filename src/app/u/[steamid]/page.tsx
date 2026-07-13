@@ -7,6 +7,7 @@ import { SteamApiError } from "@/lib/steam/webapi";
 import { ProfileHeader } from "./_components/ProfileHeader";
 import { TasteSection } from "./_components/TasteSection";
 import { StructureSection } from "./_components/StructureSection";
+import { InstrumentationPanel } from "./_components/InstrumentationPanel";
 import {
   BacklogSection,
   CoplaySection,
@@ -96,6 +97,9 @@ async function Dashboard({ steamid }: { steamid: string }) {
 
   return (
     <>
+      <Suspense fallback={null}>
+        <InstrumentationPanel steamid={steamid} />
+      </Suspense>
       {summary ? <TasteSection summary={summary} /> : null}
       {noTaste ? (
         <div className="mt-6">

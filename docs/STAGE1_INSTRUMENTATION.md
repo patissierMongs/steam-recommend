@@ -131,5 +131,12 @@ Stage 1의 성공 기준은 "추천이 좋다"가 아니라 **"Stage 2를 편향
 - [x] `InstrumentationSink` 인터페이스 + `NullSink`(기본) + `JsonlSink`(개발)
 - [x] 가명화 `subjectId(steamid, salt)` (HMAC-SHA256)
 - [x] 단위 테스트 (기본 no-op·해시 안정성·JSONL append)
-- [ ] **다음 증분**: 동의 UI + 제품 렌더 경로에서 impression/snapshot 기록 배선
-- [ ] **다음 증분**: 보존·삭제 잡, 배포용 sink 선택
+- [x] 동의 UI + 배선: steamid 바인딩 서명 동의 쿠키(`consent.ts`, 세션과 서명 도메인 분리),
+  본인 대시보드 한정 패널(`InstrumentationPanel`), 동의+서버 opt-in 시 snapshot과
+  백로그·다시잡을 impression 기록(`record.ts`). 후보 universe는 랭커와 같은 술어
+  (`backlogEligible`/`lapsedEligible`)를 공유해 risk set 정의가 어긋나지 않는다.
+- [ ] **보류 — featured 기반 섹션(신작·숨은 보석·동시출현) impression**: candidate
+  universe가 featured 피드·리뷰어 표본에 걸쳐 있어, 잘못된 universe를 기록하면 Stage 2
+  risk set이 오염된다. 정확한 universe 추출이 마련될 때까지 기록하지 않는다
+  (틀리게 기록하는 것보다 안 기록하는 쪽이 낫다).
+- [ ] **다음 증분**: interaction(click) 기록, 중복 억제·쿼터, 보존·삭제 잡, 배포용 sink 선택
