@@ -1,12 +1,20 @@
 import "server-only";
 import type { OwnedGame, PlayerSummary } from "@/lib/types";
+import { getPlayerSummaryKeyless, resolveVanityKeyless } from "@/lib/steam/community";
 
 /**
  * Steam Web API (api.steampowered.com) — 전부 개인화 데이터라 캐시하지 않는다.
  * API 키는 서버 전용. 이 모듈은 'server-only'로 클라이언트 번들 유입을 차단.
+ *
+ * 키가 없으면 프로필 요약·vanity 해석은 커뮤니티 XML로 폴백하지만,
+ * 라이브러리(GetOwnedGames)는 키가 반드시 필요하다(커뮤니티 games 엔드포인트는 로그인 게이트).
  */
 
 const BASE = "https://api.steampowered.com";
+
+export function hasApiKey(): boolean {
+  return Boolean(process.env.STEAM_API_KEY);
+}
 
 export class SteamApiError extends Error {
   constructor(
@@ -42,6 +50,7 @@ async function webApi<T>(path: string, params: Record<string, string>): Promise<
 }
 
 export async function getPlayerSummary(steamid: string): Promise<PlayerSummary | null> {
+  if (!hasApiKey()) return getPlayerSummaryKeyless(steamid); // 키 없이도 헤더는 표시
   const data = await webApi<{ response: { players: PlayerSummary[] } }>(
     "/ISteamUser/GetPlayerSummaries/v2/",
     { steamids: steamid },
@@ -83,6 +92,7 @@ export async function resolveSteamId(input: string): Promise<string | null> {
   const vanity = vanityMatch ? vanityMatch[1] : raw;
 
   if (!/^[\w-]{2,32}$/.test(vanity)) return null;
+  if (!hasApiKey()) return resolveVanityKeyless(vanity); // 키 없이도 커스텀 URL 해석
   const data = await webApi<{ response: { success: number; steamid?: string } }>(
     "/ISteamUser/ResolveVanityURL/v1/",
     { vanityurl: vanity },
