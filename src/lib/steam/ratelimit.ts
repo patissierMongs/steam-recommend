@@ -48,6 +48,21 @@ export interface PoliteFetchOptions {
 }
 
 /**
+ * 응답 본문을 안전하게 JSON 파싱. SteamSpy/상점이 200으로 비-JSON 텍스트
+ * ("Connection reset by peer" 등)를 반환하는 경우가 있어, res.json()의 SyntaxError가
+ * 'use cache' 스코프에서 처리되지 않은 거부로 프로세스를 죽이는 것을 막는다.
+ * 파싱 실패 시 일반 Error를 throw → 호출부 try/catch가 잡고, 캐시에 저장되지 않는다.
+ */
+export async function readJson<T>(res: Response, label: string): Promise<T> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`${label}: 비-JSON 응답 (status ${res.status}, "${text.slice(0, 40)}")`);
+  }
+}
+
+/**
  * 스로틀 후 fetch. 429/5xx는 Retry-After를 존중해 지수 백오프로 재시도한다.
  * 재시도를 모두 소진해도 실패하면 마지막 응답을 그대로 반환(호출부가 상태코드로 판단).
  * 네트워크 오류/타임아웃은 재시도 후 throw → 'use cache'가 나쁜 데이터를 캐시하지 않게 한다.

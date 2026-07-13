@@ -123,12 +123,16 @@ export interface GameFacts {
 // ── 추천 결과 ──────────────────────────────────────────────────
 
 export interface ScoreBreakdown {
-  /** 취향 벡터와의 코사인 유사도 (0..1) */
+  /** 최근접 취향 클러스터와의 코사인 유사도 (0..1). 클러스터 없으면 flat 프로필 코사인 */
   tasteMatch: number;
   /** Wilson 신뢰하한 (0..1), 리뷰 없으면 null */
   quality: number | null;
   /** 동시보유 lift 배수 (co-play 섹션만) */
   lift?: number;
+  /** 플레이 성향 적합도 (0..1): 도전/소셜/니치 축 호환성 */
+  personaFit?: number;
+  /** 매칭된 취향 클러스터의 대표 태그 (근거 표시용) */
+  matchedCluster?: string[];
   /** 이 후보와 겹치는 사용자 상위 태그 */
   matchedTags: string[];
 }
@@ -144,6 +148,8 @@ export interface Recommendation {
   isFree: boolean;
   score: number;
   breakdown: ScoreBreakdown;
+  /** BaRT식 ε-greedy 탐험 슬롯으로 선정된 후보 (점수 순위 밖에서 발탁) */
+  explore?: boolean;
   /** 보유 게임 섹션용 부가 정보 */
   playtimeMinutes?: number;
   lastPlayed?: number;

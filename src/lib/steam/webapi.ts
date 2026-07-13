@@ -1,6 +1,7 @@
 import "server-only";
 import type { OwnedGame, PlayerSummary } from "@/lib/types";
 import { getPlayerSummaryKeyless, resolveVanityKeyless } from "@/lib/steam/community";
+import { readJson } from "@/lib/steam/ratelimit";
 
 /**
  * Steam Web API (api.steampowered.com) — 전부 개인화 데이터라 캐시하지 않는다.
@@ -46,7 +47,11 @@ async function webApi<T>(path: string, params: Record<string, string>): Promise<
   if (!res.ok) {
     throw new SteamApiError(`Steam Web API ${path} 응답 오류: HTTP ${res.status}`, "http");
   }
-  return res.json() as Promise<T>;
+  try {
+    return await readJson<T>(res, `Steam Web API ${path}`);
+  } catch {
+    throw new SteamApiError(`Steam Web API ${path} 비-JSON 응답`, "http");
+  }
 }
 
 export async function getPlayerSummary(steamid: string): Promise<PlayerSummary | null> {

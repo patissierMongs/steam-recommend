@@ -1,6 +1,7 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { readJson } from "@/lib/steam/ratelimit";
 
 /**
  * 동시보유(co-play) 표본: "앵커 게임을 긍정 리뷰한 유저들이 실제로 플레이하는 게임".
@@ -53,7 +54,7 @@ async function fetchReviewerIds(appid: number): Promise<string[]> {
     signal: AbortSignal.timeout(12_000),
   });
   if (!res.ok) throw new Error(`appreviews HTTP ${res.status} (appid ${appid})`);
-  const data = (await res.json()) as ReviewsResponse;
+  const data = await readJson<ReviewsResponse>(res, `appreviews ${appid}`);
   const ids: string[] = [];
   const seen = new Set<string>();
   for (const review of data.reviews ?? []) {
@@ -80,10 +81,13 @@ async function fetchLibraryBare(steamid: string): Promise<LibraryResult> {
     signal: AbortSignal.timeout(12_000),
   });
   if (!res.ok) return { status: "error" };
-  const data = (await res.json()) as {
-    response: { games?: { appid: number; playtime_forever: number }[] };
-  };
-  if (data.response.games === undefined) return { status: "private" };
+  let data: { response?: { games?: { appid: number; playtime_forever: number }[] } };
+  try {
+    data = await readJson(res, `owned ${steamid}`);
+  } catch {
+    return { status: "error" }; // 비-JSON = 일시 장애로 취급 (표본에서만 제외)
+  }
+  if (!data.response || data.response.games === undefined) return { status: "private" };
   return { status: "ok", games: data.response.games };
 }
 

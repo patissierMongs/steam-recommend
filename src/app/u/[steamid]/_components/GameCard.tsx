@@ -30,6 +30,12 @@ function Badges({ rec }: { rec: Recommendation }) {
         "이 앵커 게임의 리뷰어 표본에서 전역 인기도 대비 얼마나 자주 함께 플레이되는지 (smoothed lift, 근사치)",
     });
   }
+  if (breakdown.personaFit !== undefined) {
+    badges.push({
+      label: `성향 ${Math.round(breakdown.personaFit * 100)}%`,
+      title: "플레이 성향(도전/소셜/니치 축) 적합도 — 태그 유사도와 독립적인 행동 신호",
+    });
+  }
   if (rec.playtimeMinutes !== undefined) {
     badges.push({
       label: rec.playtimeMinutes === 0 ? "미플레이" : `${formatHours(rec.playtimeMinutes)} 플레이`,
@@ -73,6 +79,14 @@ export function GameCard({ rec }: { rec: Recommendation }) {
             -{rec.discountPercent}%
           </span>
         ) : null}
+        {rec.explore ? (
+          <span
+            className="absolute left-1.5 top-1.5 rounded bg-accent/90 px-1.5 py-0.5 text-[11px] font-bold text-black"
+            title="점수 순위 밖이지만 품질이 검증된 최고 novelty 후보 — 취향 확장용 탐험 슬롯 (ε-greedy)"
+          >
+            탐험 픽
+          </span>
+        ) : null}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3">
         <h3 className="line-clamp-1 text-sm font-semibold text-foreground group-hover:text-accent">
@@ -80,7 +94,14 @@ export function GameCard({ rec }: { rec: Recommendation }) {
         </h3>
         <Badges rec={rec} />
         {rec.breakdown.matchedTags.length > 0 ? (
-          <p className="line-clamp-1 text-[11px] text-accent/90">
+          <p
+            className="line-clamp-1 text-[11px] text-accent/90"
+            title={
+              rec.breakdown.matchedCluster
+                ? `매칭된 취향 클러스터: ${rec.breakdown.matchedCluster.join(" · ")}`
+                : undefined
+            }
+          >
             {rec.breakdown.matchedTags.join(" · ")}
           </p>
         ) : null}

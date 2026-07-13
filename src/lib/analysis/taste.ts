@@ -1,10 +1,13 @@
 import type { GameFacts, OwnedGame, TasteProfileSummary, TasteTag } from "@/lib/types";
 import { herfindahlIndex, recencyDecay } from "@/lib/analysis/stats";
+import { buildTasteClusters, type TasteCluster } from "@/lib/analysis/clusters";
 
 /** 취향 프로필: 사용자 벡터 + 게임별 TF-IDF 벡터 + 선호 가중치 (docs/DESIGN.md §1–2) */
 export interface TasteModel {
-  /** 사용자 취향 벡터 (태그 → 가중치, L2 정규화 전 원시값) */
+  /** 사용자 취향 벡터 (태그 → 가중치, L2 정규화 전 원시값) — 폴백/표시용 */
   profile: Map<string, number>;
+  /** 취향 클러스터 (다중 관심사 표현) — 후보 매칭의 1차 기준 */
+  clusters: TasteCluster[];
   /** 프로필 상위 태그 (표시용, 가중치 내림차순) */
   topTags: TasteTag[];
   /** appid → 게임 TF-IDF 벡터 (프로필과 동일한 IDF 공간) */
@@ -98,6 +101,17 @@ export function buildTasteModel(
     }
   }
 
+  // 취향 클러스터: 플레이한 게임들의 (벡터, 가중치)로 다중 관심사 분리
+  const clusterInput = owned
+    .filter((g) => preferenceWeights.has(g.appid))
+    .map((g) => ({
+      appid: g.appid,
+      name: g.name,
+      vec: gameVectors.get(g.appid)!,
+      weight: preferenceWeights.get(g.appid)!,
+    }));
+  const clusters = buildTasteClusters(clusterInput);
+
   const maxWeight = Math.max(1e-12, ...profile.values());
   const topTags: TasteTag[] = [...profile.entries()]
     .sort((a, b) => b[1] - a[1])
@@ -111,7 +125,7 @@ export function buildTasteModel(
         .map((c) => c.name),
     }));
 
-  return { profile, topTags, gameVectors, preferenceWeights, idf };
+  return { profile, clusters, topTags, gameVectors, preferenceWeights, idf };
 }
 
 /** 대시보드 요약 통계 (docs/DESIGN.md §6) */
