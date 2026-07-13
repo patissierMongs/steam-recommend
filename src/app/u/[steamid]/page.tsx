@@ -54,11 +54,27 @@ async function Dashboard({ steamid }: { steamid: string }) {
     analysis = await getAnalysis(steamid);
   } catch (err) {
     if (err instanceof SteamApiError) {
-      return (
-        <NoticeCard title={err.kind === "no-key" ? "서버 설정 필요" : "Steam API 오류"}>
-          {err.message}
-        </NoticeCard>
-      );
+      if (err.kind === "no-key") {
+        return (
+          <NoticeCard title="라이브러리 연동에 서버 API 키가 필요합니다">
+            로그인과 프로필 조회는 됐지만, 보유 게임·플레이타임을 불러오려면 서버에{" "}
+            <strong>STEAM_API_KEY</strong>가 필요합니다(Steam이 라이브러리 조회에 API 키를
+            요구합니다). 서버 운영자가{" "}
+            <a
+              href="https://steamcommunity.com/dev/apikey"
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent hover:underline"
+            >
+              steamcommunity.com/dev/apikey
+            </a>{" "}
+            에서 키를 발급받아 <code className="rounded bg-background px-1">.env.local</code>의{" "}
+            <code className="rounded bg-background px-1">STEAM_API_KEY</code>에 넣고 서버를 재시작하면,
+            이후에는 로그인만으로 자동으로 추천이 표시됩니다.
+          </NoticeCard>
+        );
+      }
+      return <NoticeCard title="Steam API 오류">{err.message}</NoticeCard>;
     }
     throw err;
   }
