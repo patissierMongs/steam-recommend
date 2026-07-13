@@ -111,12 +111,15 @@ local source SHA-256 prefix는 `[redacted]`, tag-evidence SHA-256 prefix는
 SteamSpy·Store·featured 공개 item 데이터는 Next 서버 캐시에서 왔을 수 있다.
 
 - diagnosticVersion `H-013/v2`, modelVersion `legacy-tag-review/complete-case-v1`
-- fingerprints의 hash 부분: profileEvidence `bc7eb81d`, featuredAppId `225955fa`, candidateId
-  `a0f6565c`, candidateMetadata `f3dff11b`. 원 출력의 `fnv1a32:` 접두사는 문서에 보존되지
-  않았고 upstream metadata 갱신 시각은 미노출(null)이다.
-- `runStartedAt`, 전체 report, 정확한 실행 명령, `libraryItemsAtLeast30m`, target/signal coverage,
-  익명 fold exact-rank·결측 필드는 보존되지 않았다. 따라서 fingerprint는 입력 변경 탐지에는
-  쓰지만 이 문서만으로 실행을 독립 재현할 수 없다.
+- **감사 아티팩트 보존:** 위 감사가 유실됐다고 지적한 필드는 원 raw report에서 익명화해
+  [`artifacts/h013-run-2026-07-13.json`](./artifacts/h013-run-2026-07-13.json)에 backfill했다.
+  여기에는 `runStartedAt`(`2026-07-13T07:13:20.704Z`), `fnv1a32:` 접두사를 포함한 full
+  fingerprint, `libraryItemsAtLeast30m`, fold별 target/signal coverage, 익명 fold
+  exact-rank·결측(`missingSignals`)이 들어 있다. 게임 이름·appid·플레이타임·실제 태그명은 제거하고
+  표적은 안정 토큰(`g01…`), fold는 위치 id로 익명화했다.
+- 이 backfill로 커밋 이력의 실행은 감사 가능하지만, **독립 재현은 여전히 불가**하다. featured 후보
+  피드는 시변이라 동일 입력으로 재요청할 수 없고, Codex 환경에는 API credential이 없다. fingerprint는
+  입력 변경 탐지용이며 재현을 대체하지 않는다.
 - cohort: top-40 played → 태그 있는 evidence 37개 → observed 태그 177개 → eligible(support≥4)
   54개. fold 54개, target 관측 108개(태그별 top-2), unique masked 게임 19개.
 - 후보 funnel: featured 54 → outside-library 49 → facts 49 → Store-confirmed 47.
