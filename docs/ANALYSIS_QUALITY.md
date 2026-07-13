@@ -79,3 +79,53 @@ oracle 평가와 실제 retrieval을 분리해야 한다.
 이 결과가 모든 기준선보다 높더라도 현재 snapshot의 known-positive reconstruction이 이 한
 계정에서 반증되지 않았다는 뜻뿐이다. 제품 정확도, 미래 행동, 심리적 선호, 모집단 효과 또는
 신호 승격은 longitudinal multi-user 평가 전까지 보류한다.
+
+## 2026-07-13 H-013 실측 실행 기록 (지정 계정)
+
+`getTagHoldoutDiagnostic`를 지정 공개 계정에 대해 실제 STEAM_API_KEY로 1회 실행했다.
+지금까지 `NOT RUN`이던 진단에 실측치를 채운다. 개인 라이브러리 보호를 위해 게임 이름·appid는
+기록하지 않고 집계값과 fingerprint만 남긴다.
+
+- diagnosticVersion `H-013/v2`, modelVersion `legacy-tag-review/complete-case-v1`
+- fingerprints: profileEvidence `bc7eb81d`, featuredAppId `225955fa`, candidateId
+  `a0f6565c`, candidateMetadata `f3dff11b`. upstream metadata 갱신 시각은 미노출(null).
+- cohort: top-40 played → 태그 있는 evidence 37개 → observed 태그 177개 → eligible(support≥4)
+  54개. fold 54개, target 관측 108개(태그별 top-2), unique masked 게임 19개.
+- 후보 funnel: featured 54 → outside-library 49 → facts 49 → Store-confirmed 47.
+  fold별 oracle pool 49, complete-case pool은 항상 5(coverage 10.2%).
+- masked 게임이 현재 featured feed에 등장한 수: **0**. 모든 표적은 강제 삽입된 oracle 후보이며
+  실제 retrieval이 아니다.
+
+### 지표 판정
+
+- **Hit@K·Recall@K·NDCG@K (K=5/10/12/20)는 전 fold 포화(informativeFolds=0)라 전부 보류.**
+  complete-case 후보가 fold마다 정확히 5개(≤최소 K=5)여서 top-K가 자명해진다. 이 계정에서
+  H-013은 Hit/Recall/NDCG 신호를 산출하지 못한다. 해석 가능한 값은 rank percentile·MRR·rank-1
+  비중뿐이다(후보 5개 중 균일 무작위 rank-1 기대는 20%).
+
+- primary arm(top-2 마스킹), 108 표적 기준 rank-1 / 평균순위 / percentile / MRR:
+  - tagOnly 48% / 1.92 / 77.1% / 0.972 — 최상
+  - combined(legacy) 39% / 2.69 / 57.9% / 0.873
+  - popularityOnly 38% / 2.30 / 67.6% / 0.843
+  - reviewOnly 17% / 3.63 / 34.3% / 0.552 — 5개 중 중앙 이하
+- 민감도 arm(3·4위 마스킹), 108 표적: tagOnly 49% / MRR 0.988, popularityOnly 47% / 0.963,
+  combined 44% / 0.941, reviewOnly 31% / 0.752.
+- union profile-collapse arm: status `insufficient-profile`. 관측된 177개 태그를 모두 마스킹하면
+  evidence 37개가 전부 제거되어(retained 0, residual profile 태그 0) 랭커 결과를 보류했다.
+  이 라이브러리가 하나의 응집된 태그 클러스터임을 확인한다.
+
+### 결론 (신호 승격 없음)
+
+1. tagOnly가 마스킹된 고플레이 known-positive를 가장 잘 재정렬한다(rank-1 48%, 무작위 20%의
+   약 2.4배). "태그 유사도가 라이브러리-응집 known-positive를 재구성한다"와 방향이 일치한다.
+2. **판별 검사 실패:** primary tagOnly rank-1(48%) ≈ 민감도 arm(49%). 사전 등록한 해석
+   ("3·4위 arm과 비슷한 top-2 결과는 고플레이 자체가 특별하다는 주장을 약화한다")대로,
+   이 계정에서 고플레이는 특별하지 않다. 태그 매치는 top이든 3·4위든 태그-응집 게임을 똑같이
+   회수한다. 사용자의 원가설("태그별 최장 플레이 2개를 빼도 다시 등장 → 정확도 높음")은
+   재구성으로는 약하게 성립하나 고플레이 특이성으로는 반증에 가깝다.
+3. combined(legacy)는 tag·popularity 기준선을 넘지 못하고 popularityOnly와 사실상 동률이다.
+   이 계정에서 production 수식의 증분 가치는 없다.
+4. 강제 삽입 + featured-feed 등장 0 → oracle 재정렬만 측정하며 자연 retrieval이 아니다.
+
+따라서 H-013은 구현 진단으로 반증되지 않았을 뿐, 어떤 신호도 승격하지 않는다. "고플레이 특이성"
+하위 가설은 이 계정에서 약화됐다. 승격은 여전히 시간 분리·다중 사용자 평가를 요구한다.
