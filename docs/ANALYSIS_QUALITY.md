@@ -211,6 +211,30 @@ SteamSpy·Store·featured 공개 item 데이터는 Next 서버 캐시에서 왔�
   리뷰 품질 비교는 Store 타입을 확인한 미실행 표본(상한 30개, 결정적 appid 역순)으로만
   계산하도록 수정했다.
 
+## 2026-07-13 H-017 pair-arm 실측 실행 (진단 v3, 지정 계정)
+
+pairOnly arm을 추가한 H-013/v3을 같은 계정에 1회 실행했다(12:22Z). 익명화 아티팩트:
+[`artifacts/h017-run-2026-07-13.json`](./artifacts/h017-run-2026-07-13.json). fingerprints가
+오전 실행과 다르다(profile `f84c5b77`, featured `47937187`, Store-confirmed 46) — evidence·
+featured 피드가 그 사이 변해 **오전 수치와 직접 비교 불가**하며, 같은 실행 내 arm 간 비교만
+유효하다.
+
+- pair 커버리지 **100%** (fold별 complete-case 5개 전부 + 표적 108/108 순위화) — 사전 규칙의
+  "낮은 커버리지" 약화 조건은 발동하지 않음.
+- primary(top-2): pairOnly rankPct 81.5% / MRR 0.981 / rank-1 48% / 평균순위 1.74 —
+  tagOnly(79.9% / 0.972 / 48% / 1.81)보다 전 지표 근소 우위.
+- control(3·4위): pairOnly 78.2% / 0.963 / 46% / 1.87 — tagOnly(79.9% / 0.991 / 49% / 1.81)에
+  근소 열위.
+- Hit@K/Recall/NDCG는 여전히 전 fold 포화(후보 5개) → 보류. union arm은 동일하게
+  insufficient-profile.
+
+**사전 판정 적용:** "양 arm 모두 tagOnly 이상" 기준도, "명백 열위" 기준도 충족하지 않는다
+(primary 우위 +1.6%p, control 열위 −1.7%p — 5-후보 풀·상관 fold에서 판별력 없는 차이).
+따라서 H-017은 **collect-more-data 유지**. 단, 의미 있는 관측 하나는 남는다: 쌍 표현은
+corpus 37개의 희소한 쌍 공간에서도 **정보를 잃지 않고** 단일 태그와 동급으로 재구성했다 —
+광역 태그 스팸에 구조적으로 면역이면서 성능 하락이 없다는 점은 시간 분리 평가에서 재검할
+가치를 유지시킨다. 랭킹 교체는 하지 않는다.
+
 ### 참조 계정 1회 관측 (검증 아님, 사례 기록)
 
 - 깊이 분석 40개: 상대 깊이 중앙값 ×2.4, 리뷰어 중앙값 초과 78%.
