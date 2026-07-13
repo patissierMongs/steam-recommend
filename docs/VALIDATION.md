@@ -162,26 +162,11 @@ This is a **known-positive reconstruction probe**, not an offline accuracy estim
 
 Interpretation: beating random alone is weak. Matching tag-only, review-only, or popularity-only shows only that the corresponding public item facts reconstruct selected known positives. A top-two result similar to the third/fourth-place arm weakens the claim that high playtime itself is special. Consistent incremental recovery over every baseline on this one account means only that H-013 is not contradicted as an implementation diagnostic; it still requires multi-user longitudinal evaluation before any product claim or signal promotion.
 
-#### H-013 input gate and supplied-profile preflight (2026-07-13)
+#### H-013 input gate
 
 The ranker diagnostic requires the complete `GetOwnedGames` response used by the product. A local Steam `localconfig.vdf` app registry is not an interchangeable ownership snapshot: it can retain previously run, refunded, free-weekend, family-shared, software, or otherwise historical apps, while structurally omitting owned games that have never been run. Therefore local-cache data may check whether target construction is feasible, but it must not enter the H-013 candidate-ranking metrics or satisfy the `outside original library` funnel stage.
 
-The supplied profile was checked on implementation commit `f7eabc3` using a read-only local-cache preflight. No recommendation candidates were ranked.
-
-| Preflight observation | Result |
-| --- | ---: |
-| Local app records / positive-playtime records / records at least 30 minutes | [redacted] |
-| Public profile `games owned` count observed at 2026-07-13T07:21:23Z | [redacted] |
-| Top-40 Store coverage / SteamSpy coverage | 40 / 40 |
-| Store-confirmed tagged evidence games | 37 |
-| Observed tags / tags with support at least four | 167 / 52 |
-| Per-tag top-two target observations / unique target games | 104 / 20 |
-| Literal all-observed-tag union masked / retained evidence games | 36 / 1 |
-| Residual tags after literal-union masking | 4 |
-
-The local source fingerprint was `[redacted]` and the Store-confirmed tag-evidence fingerprint was `[redacted]` (truncated SHA-256, change detection only). The mismatch between 887 local app records and the public count of 916, together with the absence of zero-valued `Playtime` entries, prevents treating the local source as the current full owned set.
-
-This preflight supports two implementation conclusions only: the separate per-tag folds are constructible on this profile, and the literal batch union is destructive because multi-tag overlap removes 36 of 37 evidence games. It provides no Recall, MRR, retrieval, recommendation-accuracy, or signal-promotion evidence. Exact H-013 metrics remain `NOT RUN` until the complete Web API library input is available.
+Single-account preflights and execution notes belong in `ANALYSIS_QUALITY.md`; they do not modify this contract. If every predeclared K is saturated, the primary H-013 result is inconclusive. A rank-one share, MRR, or percentile selected for emphasis after observing saturation remains exploratory and cannot replace the predeclared endpoint.
 
 ## Signal promotion gate
 
