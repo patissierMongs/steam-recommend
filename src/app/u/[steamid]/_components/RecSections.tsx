@@ -116,7 +116,7 @@ export async function HiddenGemsSection({ steamid }: { steamid: string }) {
   return (
     <Section
       title="숨은 보석"
-      subtitle="유명하진 않지만(소유자 200만 미만) 리뷰 신뢰하한이 높고 취향·성향에 맞는 미보유 게임 — 인기도의 역수를 보상한 순위. 마지막 '탐험 픽'은 취향 확장을 위한 ε-greedy 슬롯입니다."
+      subtitle="유명하진 않지만(소유자 200만 미만) 리뷰 신뢰하한이 높고 취향·성향에 맞는 미보유 게임 — 인기도의 역수를 보상한 순위. 마지막 '탐험 픽'은 취향 확장을 위한 결정적 다양성 슬롯입니다."
     >
       <GameCardGrid recs={recs} />
     </Section>

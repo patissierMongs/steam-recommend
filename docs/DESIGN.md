@@ -40,7 +40,7 @@ Spotify가 논문·기술 블로그로 공개한 추천 기법 중 세 가지를
 | --- | --- |
 | **Taste clusters** — 청취 이력을 하나의 평균이 아닌 여러 취향 클러스터로 표현 (Discover Weekly 해설) | 플레이한 게임의 태그 벡터를 가중 구형 k-means(K≤4, 결정적)로 클러스터링. 후보는 **최근접 클러스터**와의 코사인으로 평가(max-over-clusters) — 평균 벡터가 로그라이크+농장 시뮬 취향을 뭉개는 문제 해결 (`clusters.ts`) |
 | **암묵적 피드백 신뢰도** — 재생 횟수 기반 confidence 가중 (Hu–Koren–Volinsky ALS 계열) | 플레이타임 log 감쇠 × 중앙값 정규화 × 시간 감쇠 선호 가중치 (§1, 기존) |
-| **BaRT의 explore/exploit** — ε-greedy로 대부분은 아는 취향을 활용하되 일부 슬롯은 탐험 (McInerney et al., RecSys 2018 "Explore, Exploit, and Explain") | 숨은 보석 마지막 슬롯 = **탐험 픽**: 점수 순위 밖이지만 품질 검증(WLB≥0.75)된 최고 novelty 후보를 결정적으로 발탁 (`rankHiddenGems`) |
+| **explore/exploit의 아이디어** — 대부분은 아는 취향을 활용하되 일부 슬롯은 탐험에 배정 (BaRT; McInerney et al., RecSys 2018 "Explore, Exploit, and Explain") | 숨은 보석 마지막 슬롯 = **탐험 픽**: 점수 순위 밖이지만 품질 검증(WLB≥0.75)된 최고 novelty 후보를 **결정적으로** 발탁 (`rankHiddenGems`). ⚠️ 노출·보상·반응 로그가 없으므로 bandit/ε-greedy가 **아니다** — 아이디어만 차용한 결정적 규칙 (원장 C12) |
 
 또한 Spotify가 유저 행동 특성(청취 시간대·다양성 등)을 별도 신호로 쓰는 것에 대응해,
 **플레이 성향(persona) 프로파일**을 도입했다 (§2.5).
