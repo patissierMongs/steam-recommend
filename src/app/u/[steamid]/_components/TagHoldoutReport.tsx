@@ -16,12 +16,14 @@ const RANKER_LABEL: Record<DiagnosticRanker, string> = {
   tagOnly: "태그-only",
   reviewOnly: "리뷰-only",
   popularityOnly: "소유자 추정-only (인기도)",
+  pairOnly: "태그 조합-only (H-017 · 광역 제외 쌍)",
 };
 
 const SIGNAL_LABEL = {
   tag: "태그 신호 없음",
   review: "리뷰 신호 없음",
   popularity: "소유자 추정 없음",
+  pair: "비광역 태그 2개 미만",
 } as const;
 
 function percent(value: number): string {
@@ -319,6 +321,7 @@ export function TagHoldoutReportView({ report }: { report: TagHoldoutReport }) {
                   <th className="px-3 py-2 font-medium">태그-only</th>
                   <th className="px-3 py-2 font-medium">리뷰-only</th>
                   <th className="px-3 py-2 font-medium">인기도-only</th>
+                  <th className="px-3 py-2 font-medium">조합-only</th>
                   <th className="px-3 py-2 text-right font-medium">공통 N / oracle N</th>
                   <th className="px-3 py-2 text-right font-medium">표적 coverage</th>
                 </tr>
@@ -343,7 +346,7 @@ export function TagHoldoutReportView({ report }: { report: TagHoldoutReport }) {
                         </div>
                       ))}
                     </td>
-                    {(["combined", "tagOnly", "reviewOnly", "popularityOnly"] as const).map(
+                    {(["combined", "tagOnly", "reviewOnly", "popularityOnly", "pairOnly"] as const).map(
                       (ranker) => (
                         <td key={ranker} className="px-3 py-2 tabular-nums">
                           {fold.heldout.map((game) => (

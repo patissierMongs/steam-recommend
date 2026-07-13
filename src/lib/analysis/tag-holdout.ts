@@ -7,18 +7,25 @@ import {
   tfidfVector,
   type TasteModel,
 } from "@/lib/analysis/taste";
+import { buildPairModel, scorePairOnly } from "@/lib/analysis/pair-model";
 
 /** 실험 가능 조건일 뿐 제품 임계값이 아니다. 두 개를 숨긴 뒤 두 개 이상 근거를 남긴다. */
 export const TAG_HOLDOUT_MIN_SUPPORT = 4;
 export const TAG_HOLDOUT_COUNT = 2;
 export const TAG_HOLDOUT_PRIMARY_K = 12;
 export const TAG_HOLDOUT_KS = [5, 10, TAG_HOLDOUT_PRIMARY_K, 20] as const;
-export const TAG_HOLDOUT_DIAGNOSTIC_VERSION = "H-013/v2";
+/** v3: H-017 태그-쌍 표현 arm(pairOnly) 추가. legacy 4개 arm과 complete-case 풀 정의는 불변. */
+export const TAG_HOLDOUT_DIAGNOSTIC_VERSION = "H-013/v3+H-017-pair/v1";
 export const TAG_HOLDOUT_MODEL_VERSION = "legacy-tag-review/complete-case-v1";
 
-export type DiagnosticRanker = "combined" | "tagOnly" | "reviewOnly" | "popularityOnly";
+export type DiagnosticRanker =
+  | "combined"
+  | "tagOnly"
+  | "reviewOnly"
+  | "popularityOnly"
+  | "pairOnly";
 export type HoldoutArm = "topPlay" | "lowerPlayControl";
-export type MissingDiagnosticSignal = "tag" | "review" | "popularity";
+export type MissingDiagnosticSignal = "tag" | "review" | "popularity" | "pair";
 
 export interface RankAtK {
   /** 사용자가 요청한 K. */
@@ -72,6 +79,8 @@ export interface CandidateSignalCoverage {
   tag: number;
   review: number;
   popularity: number;
+  /** H-017 쌍 점수(≥2개 비광역 태그) 확보 후보 수 — complete-case 정의에는 불포함 */
+  pair: number;
   completeCase: number;
 }
 
@@ -82,7 +91,7 @@ export interface TagHoldoutFold {
   retainedSupport: number;
   /** Store-confirmed base 후보 + 강제 삽입 표적. */
   oracleCandidateCount: number;
-  /** 네 랭커가 실제로 함께 순위화한 complete-case 후보 수. */
+  /** legacy 3신호 complete-case 후보 수 (pairOnly는 이 풀에서 쌍 점수 보유분만 순위화). */
   candidateCount: number;
   completeCaseTargets: number;
   targetCoverage: number;
@@ -193,6 +202,8 @@ interface ScoredCandidate {
   tag: number | null;
   review: number | null;
   popularity: number | null;
+  /** H-017 태그-쌍 코사인. complete-case 풀 정의에는 참여하지 않는다. */
+  pair: number | null;
 }
 
 interface MaskedRun {
@@ -334,12 +345,18 @@ function randomExpectation(
 }
 
 function missingSignals(candidate: ScoredCandidate | undefined): MissingDiagnosticSignal[] {
-  if (!candidate) return ["tag", "review", "popularity"];
+  if (!candidate) return ["tag", "review", "popularity", "pair"];
   const missing: MissingDiagnosticSignal[] = [];
   if (candidate.tag === null) missing.push("tag");
   if (candidate.review === null) missing.push("review");
   if (candidate.popularity === null) missing.push("popularity");
+  if (candidate.pair === null) missing.push("pair");
   return missing;
+}
+
+/** complete-case는 legacy 3신호 기준을 유지한다 — pair 결측은 커버리지로만 보고. */
+function isCompleteCase(missing: readonly MissingDiagnosticSignal[]): boolean {
+  return !missing.some((signal) => signal !== "pair");
 }
 
 function runMasked(
@@ -355,6 +372,8 @@ function runMasked(
     [...profileFactsByAppid].filter(([appid]) => !hiddenAppids.has(appid)),
   );
   const model = buildTasteModel(trainingOwned, trainingFacts, nowMs);
+  // H-017 arm: 같은 훈련 입력으로 표현만 쌍 벡터로 바꾼 모델 (광역 판정도 훈련 corpus 내부)
+  const pairModel = buildPairModel(trainingOwned, trainingFacts, nowMs);
   const maskedOwnedAppids = new Set(trainingOwned.map((game) => game.appid));
 
   const candidateMap = new Map<number, GameFacts>();
@@ -368,12 +387,16 @@ function runMasked(
     tag: scoreTag(model, facts),
     review: scoreReview(facts),
     popularity: scorePopularity(facts),
+    pair: scorePairOnly(pairModel, facts),
   }));
   const comparisonCandidates = scored.filter(
     (candidate) =>
       candidate.tag !== null && candidate.review !== null && candidate.popularity !== null,
   );
   const comparisonFacts = comparisonCandidates.map(({ facts }) => facts);
+  // pairOnly는 같은 complete-case 풀에서 쌍 점수가 있는 후보만 순위화한다 —
+  // 풀 정의를 5신호로 좁히면 legacy arm들과의 비교 기반이 무너지기 때문.
+  const pairRankable = comparisonCandidates.filter((candidate) => candidate.pair !== null);
   const orders: Record<DiagnosticRanker, number[]> = {
     combined: rankGeneralCandidates(
       model,
@@ -384,6 +407,7 @@ function runMasked(
     tagOnly: rankScored(comparisonCandidates, (candidate) => candidate.tag!),
     reviewOnly: rankScored(comparisonCandidates, (candidate) => candidate.review!),
     popularityOnly: rankScored(comparisonCandidates, (candidate) => candidate.popularity!),
+    pairOnly: rankScored(pairRankable, (candidate) => candidate.pair!),
   };
   const relevantAppids = hidden.map(({ owned: game }) => game.appid);
   const comparisonAppids = new Set(comparisonCandidates.map(({ facts }) => facts.appid));
@@ -404,6 +428,7 @@ function runMasked(
       tag: scored.filter(({ tag }) => tag !== null).length,
       review: scored.filter(({ review }) => review !== null).length,
       popularity: scored.filter(({ popularity }) => popularity !== null).length,
+      pair: scored.filter(({ pair }) => pair !== null).length,
       completeCase: comparisonCandidates.length,
     },
     scoresByAppid: new Map(scored.map((candidate) => [candidate.facts.appid, candidate])),
@@ -436,13 +461,14 @@ function heldoutResults(
       playtimeMinutes: game.playtime_forever,
       listedInCurrentFeaturedFeed: currentFeaturedAppids.has(game.appid),
       forcedIntoOraclePool: true,
-      completeCase: missing.length === 0,
+      completeCase: isCompleteCase(missing),
       missingSignals: missing,
       ranks: {
         combined: positions.combined.get(game.appid) ?? null,
         tagOnly: positions.tagOnly.get(game.appid) ?? null,
         reviewOnly: positions.reviewOnly.get(game.appid) ?? null,
         popularityOnly: positions.popularityOnly.get(game.appid) ?? null,
+        pairOnly: positions.pairOnly.get(game.appid) ?? null,
       },
     };
   });
@@ -516,8 +542,8 @@ function macroFor(folds: TagHoldoutFold[], ranker: DiagnosticRanker): RankerMacr
 }
 
 function macrosFor(folds: TagHoldoutFold[]): RankerMacroDiagnostic[] {
-  return (["combined", "tagOnly", "reviewOnly", "popularityOnly"] as const).map((ranker) =>
-    macroFor(folds, ranker),
+  return (["combined", "tagOnly", "reviewOnly", "popularityOnly", "pairOnly"] as const).map(
+    (ranker) => macroFor(folds, ranker),
   );
 }
 
@@ -719,7 +745,7 @@ export function runTagHoldoutDiagnostic(
         candidateCount: 0,
         completeCaseTargets: 0,
         targetCoverage: 0,
-        signalCoverage: { tag: 0, review: 0, popularity: 0, completeCase: 0 },
+        signalCoverage: { tag: 0, review: 0, popularity: 0, pair: 0, completeCase: 0 },
         residualProfileTags: 0,
         heldout: [],
         rankers: null,

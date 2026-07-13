@@ -156,19 +156,54 @@ describe("tag holdout diagnostic", () => {
     const rpg = report.folds.find((fold) => fold.tag === "RPG")!;
 
     expect(rpg.oracleCandidateCount).toBe(7);
-    expect(rpg.signalCoverage).toEqual({ tag: 6, review: 6, popularity: 6, completeCase: 4 });
+    // 훈련 corpus가 단일 태그 게임뿐이라 쌍 프로필이 비어 pair=0 (H-017 arm은 전부 보류)
+    expect(rpg.signalCoverage).toEqual({ tag: 6, review: 6, popularity: 6, pair: 0, completeCase: 4 });
     expect(Object.keys(rpg.rankers).sort()).toEqual([
       "combined",
+      "pairOnly",
       "popularityOnly",
       "reviewOnly",
       "tagOnly",
     ]);
+    const legacyRankers = ["combined", "tagOnly", "reviewOnly", "popularityOnly"] as const;
     expect(
-      Object.values(rpg.rankers).every(
-        (ranker) => ranker.rankedCandidates === rpg.candidateCount,
-      ),
+      legacyRankers.every((name) => rpg.rankers[name].rankedCandidates === rpg.candidateCount),
     ).toBe(true);
+    // pairOnly는 같은 풀에서 쌍 점수 보유분만 순위화 — 풀보다 클 수 없다
+    expect(rpg.rankers.pairOnly.rankedCandidates).toBeLessThanOrEqual(rpg.candidateCount);
     expect(rpg.heldout.every((game) => game.ranks.popularityOnly !== null)).toBe(true);
+  });
+
+  it("pairOnly arm: 광역 태그를 제외한 쌍 벡터로 표적을 순위화한다 (H-017)", () => {
+    const library = [
+      owned(1, 1000),
+      owned(2, 900),
+      owned(3, 800),
+      owned(4, 700),
+      owned(5, 600),
+      owned(6, 500),
+    ];
+    const profileFacts = new Map<number, GameFacts>([
+      [1, facts(1, { RPG: 500, Deckbuilder: 300, Roguelike: 300 })],
+      [2, facts(2, { RPG: 500, Deckbuilder: 300, Roguelike: 300 })],
+      [3, facts(3, { RPG: 400, Deckbuilder: 300, Roguelike: 300 })],
+      [4, facts(4, { RPG: 400, Strategy: 300, Fantasy: 300 })],
+      [5, facts(5, { Action: 400, Strategy: 300, Fantasy: 300 })],
+      [6, facts(6, { Action: 400, Strategy: 300, Fantasy: 300 })],
+    ]);
+    // 훈련(마스킹 후) corpus: 3~6 — Strategy·Fantasy가 과반(3/4) 광역, 쌍은 g3에서만 나옴
+    const candidates = [
+      facts(100, { RPG: 300, Deckbuilder: 300, Roguelike: 300 }), // 프로필 쌍과 동일 조합
+      facts(101, { Puzzle: 300, Horror: 300 }), // 쌍은 있으나 프로필과 무관
+    ];
+    const report = run(library, profileFacts, candidates);
+    const rpg = report.folds.find((fold) => fold.tag === "RPG")!;
+
+    // 표적 1, 2는 프로필(g3) 쌍과 같은 방향 → 동률, appid 오름차순으로 1·2위
+    expect(rpg.heldout.map((game) => game.ranks.pairOnly)).toEqual([1, 2]);
+    expect(rpg.signalCoverage.pair).toBeGreaterThanOrEqual(3);
+    // macro에 pairOnly 행이 존재한다
+    expect(report.macro.map((row) => row.ranker)).toContain("pairOnly");
   });
 
   it("complete-case에서 빠진 표적을 삭제하지 않고 coverage 실패와 random 분모에 남긴다", () => {
@@ -180,7 +215,8 @@ describe("tag holdout diagnostic", () => {
 
     expect(rpg.completeCaseTargets).toBe(1);
     expect(rpg.targetCoverage).toBe(0.5);
-    expect(rpg.heldout[0].missingSignals).toEqual(["popularity"]);
+    // pair는 훈련 corpus가 단일 태그뿐이라 보류지만 complete-case 판정에는 불참
+    expect(rpg.heldout[0].missingSignals).toEqual(["popularity", "pair"]);
     expect(Object.values(rpg.heldout[0].ranks).every((rank) => rank === null)).toBe(true);
     expect(rpg.rankers.combined.relevantCount).toBe(2);
     expect(rpg.rankers.combined.rankedRelevant).toBe(1);
