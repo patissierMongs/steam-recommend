@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  # PR은 pull_request로 실행되므로 push는 기본 브랜치로 제한(중복 실행 방지)
   push:
-    branches: ["**"]
+    branches: [master]
   pull_request:
 
 jobs:

@@ -156,6 +156,10 @@ export function summarizeTaste(
     totalHours: Math.round(totalMinutes / 60),
     medianHoursPerPlayed: Math.round((median / 60) * 10) / 10,
     concentrationHHI: herfindahlIndex(played.map((g) => g.playtime_forever)),
-    analyzedGames: model.preferenceWeights.size,
+    // 실제로 태그 벡터를 기여한 게임만 카운트 — 선호 가중치가 있어도 태그가 없으면
+    // profile에 기여하지 않으므로 preferenceWeights.size는 과대계상이다.
+    analyzedGames: [...model.preferenceWeights.keys()].filter(
+      (appid) => (model.gameVectors.get(appid)?.size ?? 0) > 0,
+    ).length,
   };
 }
