@@ -209,8 +209,9 @@ export function rankNewReleases(
 /**
  * ④ 숨은 보석 — 미보유, 인기도 역보정 (docs/DESIGN.md §5).
  * 기하 결합: taste^0.4 · WLB^0.3 · novelty^0.15 · fit^0.15 — 어느 한 축이 0이면
- * 탈락하는 AND 결합. 마지막 슬롯은 BaRT식 ε-greedy 탐험 픽: 점수 순위 밖이지만
- * 품질이 검증된 최고 novelty 후보를 하나 발탁한다(항상 exploit만 하면 필터버블).
+ * 탈락하는 AND 결합. 마지막 슬롯은 결정적 다양성 픽: 점수 순위 밖이지만 품질이
+ * 검증된 최고 novelty 후보를 하나 발탁한다(항상 상위만 뽑으면 필터버블).
+ * NB(C12): 노출·보상·반응 로그가 없으므로 bandit/ε-greedy가 아니다 — 결정적 규칙이다.
  */
 export function rankHiddenGems(
   model: TasteModel,

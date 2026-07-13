@@ -148,7 +148,7 @@ export interface Recommendation {
   isFree: boolean;
   score: number;
   breakdown: ScoreBreakdown;
-  /** BaRT식 ε-greedy 탐험 슬롯으로 선정된 후보 (점수 순위 밖에서 발탁) */
+  /** 결정적 다양성 슬롯으로 선정된 후보 (점수 순위 밖에서 발탁; 피드백 로그 없어 bandit 아님) */
   explore?: boolean;
   /** 보유 게임 섹션용 부가 정보 */
   playtimeMinutes?: number;

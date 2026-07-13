@@ -82,7 +82,7 @@ export function GameCard({ rec }: { rec: Recommendation }) {
         {rec.explore ? (
           <span
             className="absolute left-1.5 top-1.5 rounded bg-accent/90 px-1.5 py-0.5 text-[11px] font-bold text-black"
-            title="점수 순위 밖이지만 품질이 검증된 최고 novelty 후보 — 취향 확장용 탐험 슬롯 (ε-greedy)"
+            title="점수 순위 밖이지만 품질이 검증된 최고 novelty 후보 — 취향 확장용 결정적 다양성 슬롯"
           >
             탐험 픽
           </span>
