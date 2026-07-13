@@ -2,7 +2,12 @@ import "server-only";
 import { cache } from "react";
 import type { CoplayAnchor, GameFacts, OwnedGame, Recommendation } from "@/lib/types";
 import { getOwnedGames, getPlayerSummary } from "@/lib/steam/webapi";
-import { enrichWithStore, getManyScoringFacts, isGameType } from "@/lib/steam/appdata";
+import {
+  enrichWithStore,
+  getManyScoringFacts,
+  getReviewAuthorMedianPlaytime,
+  isGameType,
+} from "@/lib/steam/appdata";
 import { getFeaturedPool } from "@/lib/steam/featured";
 import { getCoplaySample, STEAM_POPULATION } from "@/lib/steam/coplay";
 import { buildTasteModel, MIN_EVIDENCE_MINUTES, summarizeTaste, type TasteModel } from "@/lib/analysis/taste";
@@ -14,6 +19,8 @@ import {
   rankNewReleases,
 } from "@/lib/analysis/recommend";
 import { smoothedLogLift } from "@/lib/analysis/stats";
+import { buildDepthProfile } from "@/lib/analysis/depth";
+import { buildTagComboProfile } from "@/lib/analysis/tag-combos";
 import { runTagHoldoutDiagnostic } from "@/lib/analysis/tag-holdout";
 import { mapWithConcurrency } from "@/lib/concurrency";
 
@@ -244,6 +251,44 @@ export const getTagHoldoutDiagnostic = cache(async (steamid: string) => {
     PROFILE_TOP_PLAYED,
     candidateUniverse.funnel,
   );
+});
+
+/** 실행/미실행 리뷰 품질 비교에서 Store 타입을 확인할 미실행 표본 상한 (조회 예산, 공개) */
+export const STRUCTURE_UNPLAYED_TYPE_CAP = 30;
+
+/**
+ * 태그 외 피벗 구조 분석 (H-014~H-017) — 게임-상대 깊이·태그 조합의 관측 요약.
+ * 랭킹 입력이 아니며, 분할 기준은 전부 데이터-상대적(게임 자신의 기준점, 라이브러리 중앙값)이다.
+ * 깊이 기준점은 리뷰 작성자 표본 중앙값(SteamSpy median_forever가 사장돼 유일한 관측 소스).
+ */
+export const getStructureProfiles = cache(async (steamid: string) => {
+  const analysis = await getAnalysis(steamid);
+  if (!analysis) return null;
+
+  // 깊이 기준점: 프로필 cohort(플레이 근거 + Store 확인)만 리뷰어 표본을 조회
+  const playedConfirmed = [...analysis.model.engagementWeights.keys()];
+  const medianEntries = await mapWithConcurrency(playedConfirmed, SPY_CONCURRENCY, async (appid) => {
+    const median = await getReviewAuthorMedianPlaytime(appid);
+    return [appid, median] as const;
+  });
+  const medianByAppid = new Map(medianEntries.filter((e): e is [number, number] => e !== null));
+
+  // 실행/미실행 비교의 미실행 쪽: 경량 팩트는 Store 타입이 없어 확인 게임 필터에서 전부
+  // 탈락한다. 예산 내에서 타입을 확인해 넣는다 (백로그 후보와 같은 결정적 appid 역순).
+  const factsForDepth = new Map(analysis.factsByAppid);
+  const unplayedUntyped = analysis.owned
+    .filter((g) => g.playtime_forever < MIN_EVIDENCE_MINUTES)
+    .map((g) => analysis.factsByAppid.get(g.appid))
+    .filter((f): f is GameFacts => f !== undefined && f.appType === null)
+    .sort((a, b) => b.appid - a.appid)
+    .slice(0, STRUCTURE_UNPLAYED_TYPE_CAP);
+  const typed = await mapWithConcurrency(unplayedUntyped, SPY_CONCURRENCY, enrichWithStore);
+  for (const f of typed) if (f) factsForDepth.set(f.appid, f);
+
+  return {
+    depth: buildDepthProfile(analysis.owned, factsForDepth, medianByAppid),
+    combos: buildTagComboProfile(analysis.owned, analysis.factsByAppid),
+  };
 });
 
 export const getNewReleaseRecs = cache(async (steamid: string): Promise<Recommendation[] | null> => {

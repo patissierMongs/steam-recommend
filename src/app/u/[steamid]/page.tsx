@@ -6,6 +6,7 @@ import { getAnalysis, getProfile, getTasteSummary } from "@/lib/analysis/pipelin
 import { SteamApiError } from "@/lib/steam/webapi";
 import { ProfileHeader } from "./_components/ProfileHeader";
 import { TasteSection } from "./_components/TasteSection";
+import { StructureSection } from "./_components/StructureSection";
 import {
   BacklogSection,
   CoplaySection,
@@ -104,6 +105,9 @@ async function Dashboard({ steamid }: { steamid: string }) {
           </EmptyNote>
         </div>
       ) : null}
+      <Suspense fallback={<SectionSkeleton title="행동 구조 분석 — 태그 외 피벗" />}>
+        <StructureSection steamid={steamid} />
+      </Suspense>
       <Section
         title="실험적 검증 세션"
         subtitle="태그별 고플레이 게임 두 개를 숨기고 재구성 순위를 확인하는 별도 진단입니다. 추천 정확도나 미래 행동 검증은 아닙니다."

@@ -170,6 +170,46 @@ function emptyFacts(appid: number, name: string): GameFacts {
   };
 }
 
+/** 리뷰 작성자 표본 중앙값의 최소 표본 크기 (미달 시 0 = 기준점 없음, 표시 규칙 공개) */
+export const MIN_REVIEW_AUTHOR_SAMPLE = 10;
+
+interface ReviewAuthorsResponse {
+  reviews?: { author?: { playtime_forever?: number } }[];
+}
+
+/**
+ * 게임의 "보통 플레이타임" 기준점 — 최근 리뷰 작성자(최대 100명, 전체 리뷰 유형)의
+ * 누적 플레이타임 중앙값(분). SteamSpy의 median_forever는 현재 전 게임 0으로 사장돼
+ * 이 표본이 유일한 관측 가능 기준점이다. 리뷰를 남긴 사람이라는 자기선택 편향이 있으며
+ * 전체 유저 중앙값이 아니다 — 표시 시 provenance를 명시할 것.
+ */
+export async function getReviewAuthorMedianPlaytime(appid: number): Promise<number> {
+  "use cache";
+  cacheLife({ stale: DAY, revalidate: 7 * DAY, expire: 30 * DAY });
+  cacheTag(`review-median-${appid}`);
+  const params = new URLSearchParams({
+    json: "1",
+    filter: "recent",
+    language: "all",
+    purchase_type: "all",
+    review_type: "all",
+    num_per_page: "100",
+    cursor: "*",
+  });
+  const res = await politeFetch(`https://store.steampowered.com/appreviews/${appid}?${params}`, {
+    throttle: throttleStore,
+  });
+  if (!res.ok) throw new Error(`appreviews HTTP ${res.status} (appid ${appid})`);
+  const data = await readJson<ReviewAuthorsResponse>(res, `appreviews ${appid}`);
+  const times = (data.reviews ?? [])
+    .map((r) => r.author?.playtime_forever ?? 0)
+    .filter((t) => t > 0)
+    .sort((a, b) => a - b);
+  if (times.length < MIN_REVIEW_AUTHOR_SAMPLE) return 0;
+  const mid = times.length / 2;
+  return times.length % 2 ? times[(times.length - 1) / 2] : (times[mid - 1] + times[mid]) / 2;
+}
+
 /** 표시 직전 상위 후보에만 상점 상세(가격/설명/출시일/타입)를 덧입힌다 */
 export async function enrichWithStore(facts: GameFacts): Promise<GameFacts> {
   try {
