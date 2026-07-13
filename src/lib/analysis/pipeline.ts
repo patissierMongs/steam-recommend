@@ -5,7 +5,7 @@ import { getOwnedGames, getPlayerSummary } from "@/lib/steam/webapi";
 import { enrichWithStore, getManyScoringFacts, isGameType } from "@/lib/steam/appdata";
 import { getFeaturedPool } from "@/lib/steam/featured";
 import { getCoplaySample, STEAM_POPULATION } from "@/lib/steam/coplay";
-import { buildTasteModel, summarizeTaste, type TasteModel } from "@/lib/analysis/taste";
+import { buildTasteModel, MIN_EVIDENCE_MINUTES, summarizeTaste, type TasteModel } from "@/lib/analysis/taste";
 import {
   rankBacklog,
   rankCoplay,
@@ -74,9 +74,11 @@ export const getAnalysis = cache(async (steamid: string): Promise<LibraryAnalysi
 
   const factsByAppid = await getManyScoringFacts([...fetchSet.values()], SPY_CONCURRENCY);
   const model = buildTasteModel(owned, factsByAppid, nowMs);
-  // 30분+ 플레이 게임이 있는데 그중 팩트를 하나도 못 받았으면 데이터 장애로 판단
-  const playedFetched = topPlayed.filter((g) => factsByAppid.has(g.appid)).length;
-  const degraded = topPlayed.length > 0 && playedFetched === 0;
+  // 취향 벡터(태그) 확보 여부로 판단한다. 팩트가 있어도 태그가 비면 model.profile은
+  // 비므로(preferenceWeights만 채워짐) 코사인이 전부 0이 되어 취향 추천이 무의미해진다.
+  // 30분+ 플레이 게임이 있는데 취향 벡터가 비면 데이터 장애/태그 부재로 간주.
+  const hasPlayedGames = owned.some((g) => g.playtime_forever >= MIN_EVIDENCE_MINUTES);
+  const degraded = hasPlayedGames && model.profile.size === 0;
   return { owned, ownedAppids: new Set(owned.map((g) => g.appid)), factsByAppid, model, nowMs, degraded };
 });
 

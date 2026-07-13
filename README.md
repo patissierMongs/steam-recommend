@@ -46,5 +46,7 @@ npm run dev
 - Steam Web API는 CORS를 허용하지 않으므로 모든 호출은 서버 경유 (`src/lib/steam/*`는 `server-only`).
 - SteamSpy 데이터(태그·소유자 추정)는 제3자 추정치다. 다운 시 상점 장르로 폴백한다.
 - co-play 표본은 리뷰 작성자 편향이 있다 — lift 통계·최소 지지도(n≥3)·표본 크기 표시로 완화.
-- 첫 분석은 라이브러리 크기에 따라 수십 초 걸릴 수 있다(appid 단위 서버 캐시로 이후 요청은 빠름).
-  Serverless 배포 시 `'use cache'`가 인메모리라 지속되지 않으므로 `'use cache: remote'` 전환을 검토할 것.
+- 첫 분석은 외부 API 예의를 위한 스로틀(SteamSpy·상점) 때문에 라이브러리가 크면 **수 분**이
+  걸릴 수 있다(최대 ~180개 후보 콜드 조회 시 SteamSpy 스로틀만 100초 이상). appid 단위 서버
+  캐시로 이후 요청은 빠르다. Serverless 배포 시 `'use cache'`가 인메모리라 인스턴스 간 지속되지
+  않으므로, 콜드 로드 자체를 줄이려면 `'use cache: remote'`(공유 지속 캐시) 전환을 권장한다.

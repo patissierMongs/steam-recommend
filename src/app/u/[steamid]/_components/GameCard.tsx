@@ -25,8 +25,9 @@ function Badges({ rec }: { rec: Recommendation }) {
   }
   if (breakdown.lift !== undefined && breakdown.lift > 1) {
     badges.push({
-      label: `기대 ×${breakdown.lift >= 10 ? Math.round(breakdown.lift) : Math.round(breakdown.lift * 10) / 10}`,
-      title: "전체 보급률 대비 이 그룹에서 몇 배나 자주 플레이되는지 (lift)",
+      label: `동반 ×${breakdown.lift >= 10 ? Math.round(breakdown.lift) : Math.round(breakdown.lift * 10) / 10}`,
+      title:
+        "이 앵커 게임의 리뷰어 표본에서 전역 인기도 대비 얼마나 자주 함께 플레이되는지 (smoothed lift, 근사치)",
     });
   }
   if (rec.playtimeMinutes !== undefined) {

@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          # 빌드는 외부 요청을 하지 않지만, 런타임 검증용 더미 값을 채워 둔다
+          SESSION_SECRET: ci-dummy-session-secret-value-32chars
+          APP_BASE_URL: http://localhost:3000

@@ -74,11 +74,12 @@ async function Dashboard({ steamid }: { steamid: string }) {
   }
 
   const summary = await getTasteSummary(steamid);
-  const noTaste = analysis.model.preferenceWeights.size === 0;
+  // 취향 벡터(태그)가 실제로 있어야 코사인 기반 추천이 의미를 가진다
+  const noTaste = analysis.model.profile.size === 0;
 
   return (
     <>
-      {summary && !analysis.degraded ? <TasteSection summary={summary} /> : null}
+      {summary && !noTaste ? <TasteSection summary={summary} /> : null}
       {noTaste && analysis.degraded ? (
         <div className="mt-10">
           <NoticeCard title="게임 데이터를 불러오지 못했습니다">

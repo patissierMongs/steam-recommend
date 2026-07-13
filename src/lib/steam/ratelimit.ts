@@ -31,6 +31,16 @@ function backoffMs(attempt: number): number {
   return Math.min(10_000, 500 * 2 ** attempt + Math.floor(Math.random() * 250));
 }
 
+/** Retry-After 헤더 → 대기 ms. 초(정수)와 HTTP-date를 모두 처리, 상한 30초 */
+function retryAfterMs(header: string | null): number | null {
+  if (!header) return null;
+  const secs = Number(header);
+  if (Number.isFinite(secs) && secs >= 0) return Math.min(secs * 1000, 30_000);
+  const date = Date.parse(header);
+  if (Number.isFinite(date)) return Math.min(Math.max(0, date - Date.now()), 30_000);
+  return null;
+}
+
 export interface PoliteFetchOptions {
   throttle: () => Promise<void>;
   timeoutMs?: number;
@@ -57,8 +67,7 @@ export async function politeFetch(url: string, opts: PoliteFetchOptions): Promis
       continue;
     }
     if ((res.status === 429 || res.status >= 500) && attempt < retries) {
-      const retryAfter = Number(res.headers.get("retry-after"));
-      const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? Math.min(retryAfter * 1000, 10_000) : backoffMs(attempt);
+      const wait = retryAfterMs(res.headers.get("retry-after")) ?? backoffMs(attempt);
       await sleep(wait);
       continue;
     }

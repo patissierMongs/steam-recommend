@@ -79,6 +79,9 @@ export function recencyDecay(lastPlayedUnixSec: number, nowMs: number, halfLifeD
  * 평활화된 lift(PMI) — 동시보유 연관 통계량.
  *   lift = P(Y | anchor 표본) / P(Y | 전체)
  * add-s 평활화로 작은 표본의 분산 폭주를 억제한다. 양수면 기대치 초과.
+ * 주의: 표본이 작아 기대치(sampleSize·baseRate)가 s보다 작으면 분모가 s에 지배돼
+ * 순위가 사실상 coCount 위주가 되고, baseRate(전역 인기도) 보정은 약해진다.
+ * 즉 s와 baseRate 스케일이 순위에 함께 작용한다 — 절대 배수 해석은 근사로 볼 것.
  */
 export function smoothedLogLift(coCount: number, sampleSize: number, baseRate: number, s = 1): number {
   if (sampleSize <= 0) return 0;

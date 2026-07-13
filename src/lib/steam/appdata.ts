@@ -5,13 +5,7 @@ import { parseOwnersMidpoint } from "@/lib/analysis/stats";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { politeFetch, throttleSteamSpy, throttleStore } from "@/lib/steam/ratelimit";
 
-/** 게임 본편이 아닌 앱 타입 — 추천 대상에서 제외 */
-const NON_GAME_TYPES = new Set([
-  "dlc", "music", "video", "movie", "series", "episode", "demo", "mod", "hardware", "advertising",
-]);
-export function isGameType(appType: string | null): boolean {
-  return appType === null || !NON_GAME_TYPES.has(appType.toLowerCase());
-}
+export { isGameType } from "@/lib/steam/apptype";
 
 /**
  * appid 단위 게임 데이터 — 사용자와 무관하므로 'use cache'로 서버 캐시.
