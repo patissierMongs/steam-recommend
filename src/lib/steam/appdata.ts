@@ -3,7 +3,15 @@ import { cacheLife, cacheTag } from "next/cache";
 import type { AppDetails, GameFacts, SteamSpyApp } from "@/lib/types";
 import { parseOwnersMidpoint } from "@/lib/analysis/stats";
 import { mapWithConcurrency } from "@/lib/concurrency";
-import { throttleSteamSpy, throttleStore } from "@/lib/steam/ratelimit";
+import { politeFetch, throttleSteamSpy, throttleStore } from "@/lib/steam/ratelimit";
+
+/** 게임 본편이 아닌 앱 타입 — 추천 대상에서 제외 */
+const NON_GAME_TYPES = new Set([
+  "dlc", "music", "video", "movie", "series", "episode", "demo", "mod", "hardware", "advertising",
+]);
+export function isGameType(appType: string | null): boolean {
+  return appType === null || !NON_GAME_TYPES.has(appType.toLowerCase());
+}
 
 /**
  * appid 단위 게임 데이터 — 사용자와 무관하므로 'use cache'로 서버 캐시.
@@ -20,9 +28,8 @@ export async function getSpyApp(appid: number): Promise<SteamSpyApp | null> {
   "use cache";
   cacheLife({ stale: 3600, revalidate: DAY, expire: 7 * DAY });
   cacheTag(`spy-${appid}`);
-  await throttleSteamSpy();
-  const res = await fetch(`https://steamspy.com/api.php?request=appdetails&appid=${appid}`, {
-    signal: AbortSignal.timeout(12_000),
+  const res = await politeFetch(`https://steamspy.com/api.php?request=appdetails&appid=${appid}`, {
+    throttle: throttleSteamSpy,
   });
   if (!res.ok) throw new Error(`SteamSpy HTTP ${res.status} (appid ${appid})`);
   const data = (await res.json()) as SteamSpyApp & { name: string | null; tags: unknown };
@@ -40,7 +47,6 @@ export async function getStoreApp(appid: number): Promise<AppDetails | null> {
   "use cache";
   cacheLife({ stale: 3600, revalidate: DAY, expire: 7 * DAY });
   cacheTag(`store-${appid}`);
-  await throttleStore();
   const params = new URLSearchParams({
     appids: String(appid),
     cc: "KR",
@@ -48,8 +54,8 @@ export async function getStoreApp(appid: number): Promise<AppDetails | null> {
     // 캐시에 대용량 설명 HTML이 들어가지 않도록 필요한 필드만
     filters: "basic,developers,genres,categories,price_overview,release_date,metacritic,recommendations",
   });
-  const res = await fetch(`https://store.steampowered.com/api/appdetails?${params}`, {
-    signal: AbortSignal.timeout(12_000),
+  const res = await politeFetch(`https://store.steampowered.com/api/appdetails?${params}`, {
+    throttle: throttleStore,
   });
   if (!res.ok) throw new Error(`appdetails HTTP ${res.status} (appid ${appid})`);
   const body = (await res.json()) as Record<string, { success: boolean; data?: AppDetails }>;

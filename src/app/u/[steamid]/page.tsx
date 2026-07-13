@@ -74,11 +74,19 @@ async function Dashboard({ steamid }: { steamid: string }) {
   }
 
   const summary = await getTasteSummary(steamid);
+  const noTaste = analysis.model.preferenceWeights.size === 0;
 
   return (
     <>
-      {summary ? <TasteSection summary={summary} /> : null}
-      {analysis.model.preferenceWeights.size === 0 ? (
+      {summary && !analysis.degraded ? <TasteSection summary={summary} /> : null}
+      {noTaste && analysis.degraded ? (
+        <div className="mt-10">
+          <NoticeCard title="게임 데이터를 불러오지 못했습니다">
+            플레이 기록이 있는 게임들의 태그·리뷰 데이터(SteamSpy·상점)를 지금 가져오지
+            못했습니다. 일시적인 외부 API 장애일 수 있으니 잠시 후 새로고침해 주세요.
+          </NoticeCard>
+        </div>
+      ) : noTaste ? (
         <div className="mt-6">
           <EmptyNote>
             플레이 기록(30분 이상)이 있는 게임이 없어 취향 기반 추천을 만들 수 없습니다.

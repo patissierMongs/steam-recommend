@@ -77,6 +77,7 @@ export async function verifyCallback(
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
     cache: "no-store",
+    signal: AbortSignal.timeout(12_000), // Steam 장애 시 로그인 요청 무한 대기 방지
   });
   if (!res.ok) return null;
   const text = await res.text();
