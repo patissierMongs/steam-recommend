@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Stage 1 instrumentation runtime logs (raw library/events — never commit)
+.instrumentation/
