@@ -7,7 +7,7 @@ const Z_95 = 1.959963984540054;
 
 /**
  * Wilson score interval의 신뢰하한 (기본 95%).
- * 긍정 비율을 표본 크기로 보정한, 순위 매기기에 안전한 품질 점수.
+ * 관측된 리뷰 긍정 비율과 표본 크기로 계산한 명목상 Wilson 하한.
  * 리뷰 10개 100% 긍정(≈0.72)보다 5,000개 93% 긍정(≈0.92)이 위로 온다.
  */
 export function wilsonLowerBound(positive: number, total: number, z = Z_95): number {
@@ -57,7 +57,7 @@ export function zScores(values: readonly number[]): number[] {
 
 /**
  * Herfindahl–Hirschman 지수: 플레이타임이 소수 게임에 얼마나 집중돼 있는지.
- * 1에 가까울수록 한 게임에 몰빵, 1/n에 가까울수록 고르게 즐김.
+ * 1에 가까울수록 한 항목에 누적시간이 집중되고, 1/n에 가까울수록 시간이 고르게 분산됨.
  */
 export function herfindahlIndex(shares: readonly number[]): number {
   const total = shares.reduce((a, b) => a + b, 0);
@@ -67,16 +67,17 @@ export function herfindahlIndex(shares: readonly number[]): number {
 
 /**
  * 지수 시간 감쇠. halfLifeDays마다 절반으로, floor 밑으로는 내려가지 않는다.
- * 오래된 플레이 기록의 취향 기여를 줄이되 완전히 지우진 않는다.
+ * 오래된 플레이 기록의 관측 가중치를 줄이되 완전히 지우진 않는다.
+ * 시각이 없으면 오래됐다고 추론할 근거도 없으므로 감쇠하지 않는다.
  */
 export function recencyDecay(lastPlayedUnixSec: number, nowMs: number, halfLifeDays = 730, floor = 0.35): number {
-  if (!lastPlayedUnixSec || lastPlayedUnixSec <= 0) return floor; // 기록 없음 → 보수적으로 하한
+  if (!lastPlayedUnixSec || lastPlayedUnixSec <= 0) return 1;
   const ageDays = Math.max(0, (nowMs / 1000 - lastPlayedUnixSec) / 86400);
   return Math.max(floor, 2 ** (-ageDays / halfLifeDays));
 }
 
 /**
- * 평활화된 lift(PMI) — 동시보유 연관 통계량.
+ * 평활화된 관측/기대 로그비 — 리뷰어 표본의 플레이 기록 동시출현 휴리스틱.
  *   lift = P(Y | anchor 표본) / P(Y | 전체)
  * add-s 평활화로 작은 표본의 분산 폭주를 억제한다. 양수면 기대치 초과.
  * 주의: 표본이 작아 기대치(sampleSize·baseRate)가 s보다 작으면 분모가 s에 지배돼

@@ -104,15 +104,9 @@ function factsFromSpy(appid: number, spy: SteamSpyApp): GameFacts {
 
 function mergeStore(facts: GameFacts, store: AppDetails): GameFacts {
   const genres = store.genres?.length ? store.genres.map((g) => g.description) : facts.genres;
-  // SteamSpy 태그가 없으면 상점 장르를 균등 가중 의사-태그로 폴백
-  const tags =
-    Object.keys(facts.tags).length > 0
-      ? facts.tags
-      : Object.fromEntries(genres.map((g) => [g, 1]));
   return {
     ...facts,
     name: store.name || facts.name,
-    tags,
     genres,
     headerImage: store.header_image || facts.headerImage,
     shortDescription: store.short_description ?? "",
@@ -139,7 +133,8 @@ export async function getScoringFacts(appid: number, fallbackName?: string): Pro
   }
   if (spy && Object.keys(spy.tags).length > 0) return factsFromSpy(appid, spy);
 
-  // 태그가 없으면 취향 계산이 불가능 — 상점 장르로 폴백
+  // Store 장르는 별도 provenance다. SteamSpy 태그가 없으면 tags는 비워 두고
+  // 코사인 주장을 보류하며, 장르는 표시용 genres에만 유지한다.
   try {
     const store = await getStoreApp(appid);
     if (store) {

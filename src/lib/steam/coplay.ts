@@ -4,7 +4,8 @@ import { mapWithConcurrency } from "@/lib/concurrency";
 import { readJson } from "@/lib/steam/ratelimit";
 
 /**
- * 동시보유(co-play) 표본: "앵커 게임을 긍정 리뷰한 유저들이 실제로 플레이하는 게임".
+ * 긍정 리뷰어 공개 라이브러리의 1시간 이상 플레이 기록 동시출현 표본.
+ * 앵커와 후보를 같은 세션·모드·사람들과 플레이했다는 뜻은 아니다.
  * 앵커 appid에만 의존하는 사용자 독립 데이터라 7일 캐시로 전 사용자가 공유한다.
  *
  * 주의: 이 모듈의 fetch는 'use cache' 스코프 안에서 실행되므로 no-store를 쓰지 않는다
@@ -16,13 +17,13 @@ const DAY = 86_400;
  * lift 기저율 p(Y)=owners/POP의 분모로 쓰는 대략적 Steam 계정 규모(프라이어).
  * 주의: add-s 평활화(smoothedLogLift) 때문에 이 상수는 순위에 영향을 준다 —
  * 표본이 작아 기대치 M·p(Y)가 s보다 작을 때 특히 그렇다. 따라서 "전체 유저 대비
- * 기대 배수"라는 절대 해석은 근사이며, co-play 표본(앵커의 최근 긍정 리뷰어 중
+ * 기대 배수"라는 절대 해석은 근사이며, 리뷰어 표본(앵커의 최근 긍정 리뷰어 중
  * 공개 라이브러리 사용자) 자체가 전체 모집단과 다르다는 점도 감안해야 한다.
- * 순위 목적상 이 값은 "동반 플레이 빈도를 전역 인기도로 완만히 보정"하는 역할이다.
+ * 순위 목적상 이 값은 "표본 내 플레이 기록 동시출현을 전역 인기도로 완만히 보정"한다.
  */
 export const STEAM_POPULATION = 120_000_000;
 
-/** co-play 신호로 인정할 최소 플레이타임(분) — 단순 보유가 아니라 실제 플레이 */
+/** 표본 내 플레이 기록으로 집계할 검증 전 최소 플레이타임(분) */
 const MIN_COPLAY_MINUTES = 60;
 const MAX_REVIEWERS = 30;
 const MIN_REVIEWER_GAMES = 5;
@@ -46,7 +47,7 @@ async function fetchReviewerIds(appid: number): Promise<string[]> {
     filter: "recent",
     language: "all",
     purchase_type: "all",
-    review_type: "positive", // 앵커를 좋아한 유저의 라이브러리가 "이 게임을 좋아하면" 신호
+    review_type: "positive", // 최근 긍정 리뷰 작성자라는 선택 조건; 전체 플레이어 표본이 아님
     num_per_page: "100",
     cursor: "*",
   });
@@ -75,7 +76,7 @@ type LibraryResult =
 
 async function fetchLibraryBare(steamid: string): Promise<LibraryResult> {
   const key = process.env.STEAM_API_KEY;
-  if (!key) throw new Error("STEAM_API_KEY 미설정 — co-play 수집 불가");
+  if (!key) throw new Error("STEAM_API_KEY 미설정 — 리뷰어 라이브러리 표본 수집 불가");
   const params = new URLSearchParams({ key, steamid, include_played_free_games: "1" });
   const res = await fetch(`https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?${params}`, {
     signal: AbortSignal.timeout(12_000),
@@ -103,7 +104,7 @@ export async function getCoplaySample(anchorAppid: number): Promise<CoplaySample
   // 7~30일 공유 캐시에 빈약한 표본이 고정되는 것을 방지 (throw → 캐시 안 됨)
   const errorCount = libraries.filter((r) => r === null || r.status === "error").length;
   if (reviewerIds.length > 0 && errorCount > reviewerIds.length / 2) {
-    throw new Error(`co-play 표본 수집 실패: ${errorCount}/${reviewerIds.length} 오류 (appid ${anchorAppid})`);
+    throw new Error(`리뷰어 라이브러리 표본 수집 실패: ${errorCount}/${reviewerIds.length} 오류 (appid ${anchorAppid})`);
   }
 
   const counts = new Map<number, number>();
@@ -123,7 +124,7 @@ export async function getCoplaySample(anchorAppid: number): Promise<CoplaySample
     sampleSize,
     counts: [...counts.entries()]
       .filter(([, c]) => c >= 2)
-      .sort((a, b) => b[1] - a[1])
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0])
       .slice(0, 80)
       .map(([appid, count]) => ({ appid, count })),
   };

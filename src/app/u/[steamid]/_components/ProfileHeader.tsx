@@ -34,7 +34,7 @@ export async function ProfileHeader({ steamid }: { steamid: string }) {
         <h1 className="truncate text-2xl font-bold">{profile.personaname}</h1>
         <p className="mt-0.5 text-xs text-muted">
           {PERSONA_STATE[profile.personastate] ?? "오프라인"}
-          {gameCount !== null ? ` · 보유 게임 ${gameCount.toLocaleString()}개` : ""}
+          {gameCount !== null ? ` · 라이브러리 항목 ${gameCount.toLocaleString()}개` : ""}
           {" · "}
           <a
             href={profile.profileurl}

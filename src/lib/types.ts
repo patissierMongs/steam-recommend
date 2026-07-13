@@ -99,7 +99,7 @@ export interface SteamSpyApp {
 export interface GameFacts {
   appid: number;
   name: string;
-  /** 태그 → 투표수. SteamSpy 부재 시 appdetails 장르를 균등 가중 의사-태그로 폴백 */
+  /** SteamSpy 태그 → 투표수. 미확보 시 빈 객체이며 Store 장르와 섞지 않음 */
   tags: Record<string, number>;
   genres: string[];
   positive: number;
@@ -123,16 +123,12 @@ export interface GameFacts {
 // ── 추천 결과 ──────────────────────────────────────────────────
 
 export interface ScoreBreakdown {
-  /** 최근접 취향 클러스터와의 코사인 유사도 (0..1). 클러스터 없으면 flat 프로필 코사인 */
-  tasteMatch: number;
-  /** Wilson 신뢰하한 (0..1), 리뷰 없으면 null */
-  quality: number | null;
-  /** 동시보유 lift 배수 (co-play 섹션만) */
+  /** 플레이 기록 태그 프로필과의 코사인 유사도 (0..1), 태그가 없으면 null */
+  tasteMatch: number | null;
+  /** 리뷰 긍정률의 명목상 Wilson 하한 (0..1), 리뷰 없으면 null */
+  reviewLowerBound: number | null;
+  /** 긍정 리뷰어 공개 라이브러리 동시출현 lift 근사치 */
   lift?: number;
-  /** 플레이 성향 적합도 (0..1): 도전/소셜/니치 축 호환성 */
-  personaFit?: number;
-  /** 매칭된 취향 클러스터의 대표 태그 (근거 표시용) */
-  matchedCluster?: string[];
   /** 이 후보와 겹치는 사용자 상위 태그 */
   matchedTags: string[];
 }
@@ -148,9 +144,7 @@ export interface Recommendation {
   isFree: boolean;
   score: number;
   breakdown: ScoreBreakdown;
-  /** BaRT식 ε-greedy 탐험 슬롯으로 선정된 후보 (점수 순위 밖에서 발탁) */
-  explore?: boolean;
-  /** 보유 게임 섹션용 부가 정보 */
+  /** 현재 라이브러리 항목 섹션용 부가 정보 */
   playtimeMinutes?: number;
   lastPlayed?: number;
   medianPlaytime?: number;
@@ -173,6 +167,7 @@ export interface TasteProfileSummary {
   medianHoursPerPlayed: number;
   concentrationHHI: number;
   analyzedGames: number; // 태그 데이터를 확보해 프로필에 반영된 게임 수
+  genreAnalyzedGames: number; // 장르 분포에 반영된 게임 수
 }
 
 export interface CoplayAnchor {

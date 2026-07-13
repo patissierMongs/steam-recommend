@@ -6,7 +6,6 @@ import { enrichWithStore, getManyScoringFacts, isGameType } from "@/lib/steam/ap
 import { getFeaturedPool } from "@/lib/steam/featured";
 import { getCoplaySample, STEAM_POPULATION } from "@/lib/steam/coplay";
 import { buildTasteModel, MIN_EVIDENCE_MINUTES, summarizeTaste, type TasteModel } from "@/lib/analysis/taste";
-import { buildPersona, type PersonaProfile } from "@/lib/analysis/persona";
 import {
   rankBacklog,
   rankCoplay,
@@ -15,6 +14,7 @@ import {
   rankNewReleases,
 } from "@/lib/analysis/recommend";
 import { smoothedLogLift } from "@/lib/analysis/stats";
+import { runTagHoldoutDiagnostic } from "@/lib/analysis/tag-holdout";
 import { mapWithConcurrency } from "@/lib/concurrency";
 
 /**
@@ -22,11 +22,11 @@ import { mapWithConcurrency } from "@/lib/concurrency";
  * 분석 결과를 공유한다(개인화 데이터라 서버 캐시는 하지 않는다).
  */
 
-/** 취향 증거로 쓸 플레이 상위 게임 수 */
-const PROFILE_TOP_PLAYED = 40;
+/** 플레이 기록 태그 프로필에 쓸 상위 게임 수 */
+export const PROFILE_TOP_PLAYED = 40;
 /** 백로그 후보 팩트 조회 상한 (SteamSpy 예의) */
-const BACKLOG_FETCH_CAP = 100;
-const LAPSED_FETCH_CAP = 40;
+export const BACKLOG_FETCH_CAP = 100;
+export const LAPSED_FETCH_CAP = 40;
 const SPY_CONCURRENCY = 6;
 
 export const getProfile = cache(getPlayerSummary);
@@ -37,11 +37,7 @@ export interface LibraryAnalysis {
   ownedAppids: Set<number>;
   factsByAppid: Map<number, GameFacts>;
   model: TasteModel;
-  persona: PersonaProfile;
   nowMs: number;
-  /** 라이브러리에 30분+ 플레이한 게임이 있는데 메타데이터를 하나도 못 받은 상태
-   * (SteamSpy/상점 장애) — "무플레이"와 구분해 UI에서 다르게 안내한다. */
-  degraded: boolean;
 }
 
 export const getAnalysis = cache(async (steamid: string): Promise<LibraryAnalysis | null> => {
@@ -49,12 +45,18 @@ export const getAnalysis = cache(async (steamid: string): Promise<LibraryAnalysi
   if (!owned || owned.length === 0) return null;
   const nowMs = Date.now();
 
-  const byPlaytime = [...owned].sort((a, b) => b.playtime_forever - a.playtime_forever);
-  const topPlayed = byPlaytime.filter((g) => g.playtime_forever >= 30).slice(0, PROFILE_TOP_PLAYED);
+  const byPlaytime = [...owned].sort(
+    (a, b) => b.playtime_forever - a.playtime_forever || a.appid - b.appid,
+  );
+  const topPlayed = byPlaytime
+    .filter((g) => g.playtime_forever >= MIN_EVIDENCE_MINUTES)
+    .slice(0, PROFILE_TOP_PLAYED);
 
   const backlogCandidates = owned
     .filter((g) => g.playtime_forever < 120)
-    .sort((a, b) => b.appid - a.appid) // appid 내림차순 ≈ 최신 등록 게임 우선
+    // 취득 시각은 공개 API에 없다. AppID는 의미 있는 최신성 신호가 아니라
+    // 조회 예산을 재현 가능하게 자르기 위한 순서일 뿐이다.
+    .sort((a, b) => b.appid - a.appid)
     .slice(0, BACKLOG_FETCH_CAP);
 
   const lapsedCutoff = nowMs / 1000 - 180 * 86400;
@@ -75,43 +77,41 @@ export const getAnalysis = cache(async (steamid: string): Promise<LibraryAnalysi
   }
 
   const factsByAppid = await getManyScoringFacts([...fetchSet.values()], SPY_CONCURRENCY);
-  const model = buildTasteModel(owned, factsByAppid, nowMs);
-  const persona = buildPersona(owned, factsByAppid, model);
-  // 취향 벡터(태그) 확보 여부로 판단한다. 팩트가 있어도 태그가 비면 model.profile은
-  // 비므로(preferenceWeights만 채워짐) 코사인이 전부 0이 되어 취향 추천이 무의미해진다.
-  // 30분+ 플레이 게임이 있는데 취향 벡터가 비면 데이터 장애/태그 부재로 간주.
-  const hasPlayedGames = owned.some((g) => g.playtime_forever >= MIN_EVIDENCE_MINUTES);
-  const degraded = hasPlayedGames && model.profile.size === 0;
+  // SteamSpy 태그가 있으면 경량 fetch는 Store 타입을 생략한다. 프로필 입력만큼은
+  // Software/Utilities 혼입을 막기 위해 타입을 확인하고, 실패 시 unknown으로 보류한다.
+  const typedProfileFacts = await mapWithConcurrency(topPlayed, SPY_CONCURRENCY, async (game) => {
+    const base = factsByAppid.get(game.appid);
+    if (!base) return null;
+    return base.appType === null ? enrichWithStore(base) : base;
+  });
+  const profileFactsByAppid = new Map<number, GameFacts>();
+  for (const facts of typedProfileFacts) {
+    if (!facts) continue;
+    factsByAppid.set(facts.appid, facts);
+    profileFactsByAppid.set(facts.appid, facts);
+  }
+  // 백로그/lapsed 후보 팩트는 추천에만 사용하고 프로필 corpus에는 넣지 않는다.
+  const model = buildTasteModel(owned, profileFactsByAppid, nowMs);
   return {
     owned,
     ownedAppids: new Set(owned.map((g) => g.appid)),
     factsByAppid,
     model,
-    persona,
     nowMs,
-    degraded,
   };
 });
 
 export const getTasteSummary = cache(async (steamid: string) => {
   const analysis = await getAnalysis(steamid);
   if (!analysis) return null;
-  return {
-    ...summarizeTaste(analysis.owned, analysis.factsByAppid, analysis.model),
-    persona: analysis.persona,
-    clusters: analysis.model.clusters.map((c) => ({
-      topTags: c.topTags,
-      share: c.share,
-      games: c.games,
-    })),
-  };
+  return summarizeTaste(analysis.owned, analysis.factsByAppid, analysis.model);
 });
 
 /**
  * 상위 후보에 상점 상세(가격/설명/출시일/타입)를 덧입히고, 타입이 확인된 비-게임
  * (DLC/데모/사운드트랙 등)을 제거한 뒤 표시 개수로 자른다.
  * 랭커에는 여유분을 요청해 DLC 제거 후에도 개수가 유지되게 한다.
- * factsProvider가 팩트를 못 주거나 상점 보강이 실패하면(타입 미확인) 그대로 유지한다.
+ * factsProvider가 팩트를 못 주거나 Store 타입 확인이 실패하면 해당 카드 주장을 보류한다.
  */
 async function enrichAndFilter(
   recs: Recommendation[],
@@ -120,7 +120,7 @@ async function enrichAndFilter(
 ): Promise<Recommendation[]> {
   const enriched = await mapWithConcurrency(recs, 6, async (rec) => {
     const base = factsProvider(rec.appid);
-    if (!base) return { rec, keep: true };
+    if (!base) return { rec, keep: false };
     const full = await enrichWithStore(base);
     const merged: Recommendation = {
       ...rec,
@@ -135,9 +135,8 @@ async function enrichAndFilter(
     return { rec: merged, keep: isGameType(full.appType) };
   });
   const out: Recommendation[] = [];
-  enriched.forEach((e, i) => {
-    if (e === null) out.push(recs[i]); // 보강 자체 실패 → 타입 미확인, 유지
-    else if (e.keep) out.push(e.rec);
+  enriched.forEach((e) => {
+    if (e !== null && e.keep) out.push(e.rec);
   });
   return out.slice(0, displayLimit);
 }
@@ -145,18 +144,18 @@ async function enrichAndFilter(
 export const getBacklogRecs = cache(async (steamid: string): Promise<Recommendation[] | null> => {
   const analysis = await getAnalysis(steamid);
   if (!analysis) return null;
-  const recs = rankBacklog(analysis.model, analysis.persona, analysis.owned, analysis.factsByAppid, 18);
+  const recs = rankBacklog(analysis.model, analysis.owned, analysis.factsByAppid, 18);
   return enrichAndFilter(recs, (id) => analysis.factsByAppid.get(id), 12);
 });
 
 export const getLapsedRecs = cache(async (steamid: string): Promise<Recommendation[] | null> => {
   const analysis = await getAnalysis(steamid);
   if (!analysis) return null;
-  const recs = rankLapsed(analysis.model, analysis.persona, analysis.owned, analysis.factsByAppid, analysis.nowMs, 12);
+  const recs = rankLapsed(analysis.model, analysis.owned, analysis.factsByAppid, analysis.nowMs, 12);
   return enrichAndFilter(recs, (id) => analysis.factsByAppid.get(id), 8);
 });
 
-/** 신작/미보유 후보 풀의 팩트 (요청 내 공유; 서버 캐시는 appid 단위 fetcher가 담당) */
+/** 신작/현재 라이브러리 밖 후보 풀의 팩트 (요청 내 공유; 서버 캐시는 appid 단위 fetcher가 담당) */
 const getCandidateFacts = cache(async (steamid: string): Promise<Map<number, GameFacts> | null> => {
   const analysis = await getAnalysis(steamid);
   if (!analysis) return null;
@@ -166,30 +165,111 @@ const getCandidateFacts = cache(async (steamid: string): Promise<Map<number, Gam
   return getManyScoringFacts(notOwned, SPY_CONCURRENCY);
 });
 
+/**
+ * 태그 마스킹 진단은 순위 분모 전체의 타입이 확정돼야 한다. 표시 상위 카드만 사후 확인하는
+ * 제품 경로와 달리, 현재 featured 후보 팩트 전체를 Store로 확인해 고정 후보군을 만든다.
+ */
+interface VerifiedDiagnosticCandidates {
+  candidates: GameFacts[];
+  featuredAppids: Set<number>;
+  funnel: {
+    filteredFeaturedAppIds: number;
+    outsideOriginalLibraryIds: number;
+    scoringFactsRetrieved: number;
+    storeConfirmedGames: number;
+  };
+}
+
+const getVerifiedDiagnosticCandidates = cache(
+  async (steamid: string): Promise<VerifiedDiagnosticCandidates | null> => {
+    const [analysis, candidates, featured] = await Promise.all([
+      getAnalysis(steamid),
+      getCandidateFacts(steamid),
+      getFeaturedPool(),
+    ]);
+    if (!analysis || !candidates) return null;
+    const rawFeatured = new Map(
+      [...featured.newReleases, ...featured.topSellers, ...featured.specials, ...featured.comingSoon].map(
+        (item) => [item.appid, item],
+      ),
+    );
+    const outsideOriginalLibraryIds = [...rawFeatured.keys()].filter(
+      (appid) => !analysis.ownedAppids.has(appid),
+    ).length;
+    const verified = await mapWithConcurrency(
+      [...candidates.values()],
+      SPY_CONCURRENCY,
+      enrichWithStore,
+    );
+    const games = verified
+      .filter((facts): facts is GameFacts => facts !== null && isGameType(facts.appType))
+      .sort((a, b) => a.appid - b.appid);
+    return {
+      candidates: games,
+      featuredAppids: new Set(rawFeatured.keys()),
+      funnel: {
+        filteredFeaturedAppIds: rawFeatured.size,
+        outsideOriginalLibraryIds,
+        scoringFactsRetrieved: candidates.size,
+        storeConfirmedGames: games.length,
+      },
+    };
+  },
+);
+
+/**
+ * 별도 ranker-only 진단 세션. 현재 snapshot의 태그별 고플레이 게임을 마스킹하며,
+ * 결과는 미래 추천 정확도나 candidate retrieval 평가로 승격하지 않는다.
+ */
+export const getTagHoldoutDiagnostic = cache(async (steamid: string) => {
+  const [analysis, candidateUniverse] = await Promise.all([
+    getAnalysis(steamid),
+    getVerifiedDiagnosticCandidates(steamid),
+  ]);
+  if (!analysis || !candidateUniverse) return null;
+
+  // 정확히 현행 profile cohort만 사용한다. backlog/lapsed 팩트가 우연히 확인됐더라도
+  // 진단 범위를 top-played 40 밖으로 확장하거나 fold별로 refill하지 않는다.
+  const profileFactsByAppid = new Map<number, GameFacts>();
+  for (const appid of analysis.model.engagementWeights.keys()) {
+    const facts = analysis.factsByAppid.get(appid);
+    if (facts) profileFactsByAppid.set(appid, facts);
+  }
+  return runTagHoldoutDiagnostic(
+    analysis.owned,
+    profileFactsByAppid,
+    candidateUniverse.candidates,
+    candidateUniverse.featuredAppids,
+    analysis.nowMs,
+    PROFILE_TOP_PLAYED,
+    candidateUniverse.funnel,
+  );
+});
+
 export const getNewReleaseRecs = cache(async (steamid: string): Promise<Recommendation[] | null> => {
   const [analysis, candidateFacts] = await Promise.all([getAnalysis(steamid), getCandidateFacts(steamid)]);
   if (!analysis || !candidateFacts) return null;
   const pool = await getFeaturedPool();
   const freshIds = new Set([...pool.newReleases, ...pool.comingSoon].map((c) => c.appid));
   const fresh = [...candidateFacts.values()].filter((f) => freshIds.has(f.appid));
-  const recs = rankNewReleases(analysis.model, analysis.persona, fresh, analysis.ownedAppids, 18);
+  const recs = rankNewReleases(analysis.model, fresh, analysis.ownedAppids, 18);
   // 후보 팩트는 SteamSpy 기반 — 표시 전 상점 정보(가격/설명/타입) 보강 + DLC 제거
   return enrichAndFilter(recs, (id) => candidateFacts.get(id), 12);
 });
 
-/** co-play 앵커: 선호 가중치 상위 3개 (팩트 확보된 게임만) */
+/** 리뷰어 라이브러리 동시출현 앵커: 관측 가중치 상위 3개 */
 export const getCoplayRecs = cache(async (steamid: string): Promise<CoplayAnchor[] | null> => {
   const analysis = await getAnalysis(steamid);
   if (!analysis) return null;
-  const anchors = [...analysis.model.preferenceWeights.entries()]
-    .sort((a, b) => b[1] - a[1])
+  const anchors = [...analysis.model.engagementWeights.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])
     .slice(0, 3)
     .map(([appid]) => appid);
   if (anchors.length === 0) return [];
 
   const results = await mapWithConcurrency(anchors, 3, async (anchorAppid) => {
     const sample = await getCoplaySample(anchorAppid);
-    if (sample.sampleSize < 5) return null; // 표본이 너무 작으면 통계로서 무의미
+    if (sample.sampleSize < 5) return null; // 검증 전 운영상 최소 표본 하한
 
     const candidateIds = sample.counts
       .filter((c) => c.count >= 3 && !analysis.ownedAppids.has(c.appid))
@@ -202,13 +282,13 @@ export const getCoplayRecs = cache(async (steamid: string): Promise<CoplayAnchor
     const scored = candidateIds
       .map((c) => {
         const f = facts.get(c.appid);
-        if (!f) return null;
-        const baseRate = f.ownersEstimate > 0 ? f.ownersEstimate / STEAM_POPULATION : 0.001;
+        if (!f || f.ownersEstimate <= 0) return null;
+        const baseRate = f.ownersEstimate / STEAM_POPULATION;
         return { facts: f, coCount: c.count, logLift: smoothedLogLift(c.count, sample.sampleSize, baseRate) };
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
 
-    const recs = rankCoplay(analysis.model, analysis.persona, scored, analysis.ownedAppids, 9);
+    const recs = rankCoplay(analysis.model, scored, analysis.ownedAppids, 9);
     const enriched = await enrichAndFilter(recs, (id) => facts.get(id), 6);
     const anchorFacts = analysis.factsByAppid.get(anchorAppid);
     const anchorName =
@@ -224,7 +304,7 @@ export const getCoplayRecs = cache(async (steamid: string): Promise<CoplayAnchor
   return results.filter((a): a is CoplayAnchor => a !== null && a.recommendations.length > 0);
 });
 
-/** 숨은 보석: 신작 풀 ∪ co-play 후보 중 저인지도·고품질·고매칭 */
+/** 숨은 보석: 신작 풀 ∪ 리뷰어 라이브러리 동시출현 후보 중 저인지도 후보 */
 export const getHiddenGemRecs = cache(async (steamid: string): Promise<Recommendation[] | null> => {
   const [analysis, candidateFacts, coplay] = await Promise.all([
     getAnalysis(steamid),
@@ -234,7 +314,7 @@ export const getHiddenGemRecs = cache(async (steamid: string): Promise<Recommend
   if (!analysis) return null;
 
   const poolFacts = new Map<number, GameFacts>(candidateFacts ?? []);
-  // co-play 섹션이 이미 확보한 후보의 팩트를 재조회 (appid 단위 서버 캐시 히트라 저렴)
+  // 동시출현 섹션이 확보한 후보의 팩트를 재조회 (appid 단위 서버 캐시 히트)
   if (coplay) {
     const extraIds = coplay
       .flatMap((a) => a.recommendations.map((r) => r.appid))
@@ -246,8 +326,6 @@ export const getHiddenGemRecs = cache(async (steamid: string): Promise<Recommend
     for (const [id, f] of extra) poolFacts.set(id, f);
   }
 
-  // 탐험 픽이 마지막 슬롯에 위치하므로 랭킹 개수 = 표시 개수로 맞춘다
-  // (여유분을 두면 표시 컷에서 탐험 픽이 잘린다; DLC 제거로 다소 줄어드는 건 허용)
-  const recs = rankHiddenGems(analysis.model, analysis.persona, [...poolFacts.values()], analysis.ownedAppids, 11);
+  const recs = rankHiddenGems(analysis.model, [...poolFacts.values()], analysis.ownedAppids, 11);
   return enrichAndFilter(recs, (id) => poolFacts.get(id), 11);
 });
