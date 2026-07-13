@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { GameFacts, OwnedGame } from "@/lib/types";
 import { buildTasteModel, preferenceWeight, summarizeTaste } from "./taste";
-import { rankBacklog, rankHiddenGems } from "./recommend";
+import { rankBacklog, rankHiddenGems, rankNewReleases } from "./recommend";
 
 const NOW = Date.UTC(2026, 6, 1);
 const RECENT = NOW / 1000 - 7 * 86400;
@@ -90,6 +90,30 @@ describe("buildTasteModel + rankBacklog", () => {
     const recs = rankBacklog(model, library, factsMap);
     const top = recs.find((r) => r.name === "Backlog Roguelike");
     expect(top?.breakdown.matchedTags).toContain("Roguelike");
+  });
+});
+
+describe("태그 없는 팩트 → 취향 벡터 비어있음 (장애 판정 근거)", () => {
+  it("팩트는 있지만 태그가 없으면 profile은 비고 preferenceWeights만 채워진다", () => {
+    const lib: OwnedGame[] = [owned(1, "Tagless", 600)];
+    const tagless = new Map<number, GameFacts>([[1, facts(1, "Tagless", { tags: {} })]]);
+    const model = buildTasteModel(lib, tagless, NOW);
+    // 이 불일치가 degraded 판정을 preferenceWeights가 아닌 profile 기준으로 해야 하는 이유
+    expect(model.preferenceWeights.size).toBe(1);
+    expect(model.profile.size).toBe(0);
+  });
+});
+
+describe("rankNewReleases 리뷰 없는 후보는 확인된 고품질 후보를 이기지 못한다", () => {
+  const model = buildTasteModel(library, factsMap, NOW);
+  it("동일 취향이면 리뷰 있는(고 Wilson) 게임이 리뷰 없는 게임보다 위", () => {
+    const reviewed = facts(200, "Reviewed Good", { tags: { Roguelike: 500 }, positive: 4000, negative: 100 });
+    const unreviewed = facts(201, "No Reviews", { tags: { Roguelike: 500 }, positive: 0, negative: 0 });
+    const recs = rankNewReleases(model, [reviewed, unreviewed], new Set());
+    const names = recs.map((r) => r.name);
+    expect(names.indexOf("Reviewed Good")).toBeLessThan(names.indexOf("No Reviews"));
+    // 리뷰 없는 후보의 품질은 null로 표기된다
+    expect(recs.find((r) => r.name === "No Reviews")?.breakdown.quality).toBeNull();
   });
 });
 

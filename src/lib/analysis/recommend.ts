@@ -52,15 +52,18 @@ interface Scored {
 }
 
 /**
- * null(리뷰 없음)을 제외한 값들로만 z-분포를 만든다 — null을 0으로 섞으면
- * 분포의 평균/분산이 왜곡돼 리뷰 있는 후보들의 z-점수까지 오염된다.
- * null 항은 z=0(중립)으로 둔다.
+ * 리뷰 있는 후보들로만 z-분포를 만든다 — null을 0으로 섞으면 분포 평균/분산이
+ * 왜곡돼 리뷰 있는 후보의 z까지 오염된다.
+ * 리뷰 없음(null)은 z=0(평균)이 아니라 약한 음수 값을 준다: "품질 미검증"을
+ * 평균 품질로 대우하면 신작 섹션에서 리뷰 없는 게임이 확인된 Wilson 점수의 게임을
+ * 이길 수 있다. 소표본 과대평가 방지 철학을 데이터 없음까지 일관 적용한다.
  */
+const UNKNOWN_QUALITY_Z = -0.5; // 리뷰 있는 후보 평균보다 0.5σ 아래
 function zScoresWithNulls(values: readonly (number | null)[]): number[] {
   const present = values.filter((v): v is number => v !== null);
   const z = zScores(present);
   let j = 0;
-  return values.map((v) => (v === null ? 0 : z[j++]));
+  return values.map((v) => (v === null ? UNKNOWN_QUALITY_Z : z[j++]));
 }
 
 /** z-정규화 가중합으로 최종 점수화. wlb가 null인 후보는 품질 항 0(중립) 처리. */
