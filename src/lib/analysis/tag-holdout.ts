@@ -159,6 +159,8 @@ export interface DiagnosticCandidateFunnel {
   /** 패키지·번들 제거 및 카테고리 합집합 중복 제거 뒤의 app ID 수. */
   filteredFeaturedAppIds: number;
   outsideOriginalLibraryIds: number;
+  /** H-018 retrieval-v2: 동시출현 확장으로 featured 밖에서 추가된 라이브러리 밖 후보 수 */
+  coplayExpandedOutsideLibraryIds?: number;
   scoringFactsRetrieved: number;
   storeConfirmedGames: number;
 }

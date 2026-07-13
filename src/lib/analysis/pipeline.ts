@@ -19,6 +19,7 @@ import {
   rankNewReleases,
 } from "@/lib/analysis/recommend";
 import { smoothedLogLift } from "@/lib/analysis/stats";
+import { aggregateCoplayCandidates } from "@/lib/analysis/retrieval";
 import { buildDepthProfile } from "@/lib/analysis/depth";
 import { buildTagComboProfile } from "@/lib/analysis/tag-combos";
 import { runTagHoldoutDiagnostic } from "@/lib/analysis/tag-holdout";
@@ -172,9 +173,66 @@ const getCandidateFacts = cache(async (steamid: string): Promise<Map<number, Gam
   return getManyScoringFacts(notOwned, SPY_CONCURRENCY);
 });
 
+/** H-018 retrieval-v2: 동시출현 후보 생성에 쓸 앵커 수 (관측 가중치 상위, 공개 예산) */
+export const RETRIEVAL_ANCHOR_COUNT = 8;
+/** H-018 retrieval-v2: 동시출현 확장 후보 팩트 조회 상한 (SteamSpy 예의, 공개 예산) */
+export const RETRIEVAL_CANDIDATE_CAP = 100;
+
+/**
+ * H-018 후보 생성 확장 (docs/ALGORITHM_AUDIT.md D1): 관측 가중치 상위 앵커들의
+ * 리뷰어 라이브러리 동시출현 표본을 병합해 featured 밖 후보를 만든다.
+ * retrieval 변경일 뿐 랭킹 신호·가중치는 불변이며, 표본 실패 앵커는 건너뛴다.
+ */
+const getExpandedCandidateFacts = cache(
+  async (steamid: string): Promise<Map<number, GameFacts> | null> => {
+    const analysis = await getAnalysis(steamid);
+    if (!analysis) return null;
+    const anchors = [...analysis.model.engagementWeights.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+      .slice(0, RETRIEVAL_ANCHOR_COUNT)
+      .map(([appid]) => appid);
+    const samples = await mapWithConcurrency(anchors, 3, async (appid) => {
+      const sample = await getCoplaySample(appid);
+      return sample.sampleSize >= 5 ? sample : null; // 검증 전 운영상 최소 표본 하한 (coplay와 동일)
+    });
+    const merged = aggregateCoplayCandidates(
+      samples.filter((s): s is NonNullable<typeof s> => s !== null),
+      analysis.ownedAppids,
+      RETRIEVAL_CANDIDATE_CAP,
+    );
+    return getManyScoringFacts(
+      merged.map(({ appid }) => ({ appid })),
+      SPY_CONCURRENCY,
+    );
+  },
+);
+
+/** 발견 섹션·진단 공유 후보 풀: featured ∪ 동시출현 확장 (retrieval-v2) */
+const getDiscoveryCandidateFacts = cache(
+  async (steamid: string): Promise<{ facts: Map<number, GameFacts>; featuredIds: number; coplayExpandedIds: number } | null> => {
+    const [featured, expanded] = await Promise.all([
+      getCandidateFacts(steamid),
+      getExpandedCandidateFacts(steamid).catch(() => null),
+    ]);
+    if (!featured) return null;
+    const facts = new Map(featured);
+    let added = 0;
+    if (expanded) {
+      for (const [appid, f] of expanded) {
+        if (!facts.has(appid)) {
+          facts.set(appid, f);
+          added++;
+        }
+      }
+    }
+    return { facts, featuredIds: featured.size, coplayExpandedIds: added };
+  },
+);
+
 /**
  * 태그 마스킹 진단은 순위 분모 전체의 타입이 확정돼야 한다. 표시 상위 카드만 사후 확인하는
- * 제품 경로와 달리, 현재 featured 후보 팩트 전체를 Store로 확인해 고정 후보군을 만든다.
+ * 제품 경로와 달리, 발견 풀(featured ∪ 동시출현 확장) 팩트 전체를 Store로 확인해 고정
+ * 후보군을 만든다. retrieval-v2 확장분은 funnel의 coplayExpandedOutsideLibraryIds로 공개한다.
  */
 interface VerifiedDiagnosticCandidates {
   candidates: GameFacts[];
@@ -182,6 +240,7 @@ interface VerifiedDiagnosticCandidates {
   funnel: {
     filteredFeaturedAppIds: number;
     outsideOriginalLibraryIds: number;
+    coplayExpandedOutsideLibraryIds: number;
     scoringFactsRetrieved: number;
     storeConfirmedGames: number;
   };
@@ -189,12 +248,12 @@ interface VerifiedDiagnosticCandidates {
 
 const getVerifiedDiagnosticCandidates = cache(
   async (steamid: string): Promise<VerifiedDiagnosticCandidates | null> => {
-    const [analysis, candidates, featured] = await Promise.all([
+    const [analysis, discovery, featured] = await Promise.all([
       getAnalysis(steamid),
-      getCandidateFacts(steamid),
+      getDiscoveryCandidateFacts(steamid),
       getFeaturedPool(),
     ]);
-    if (!analysis || !candidates) return null;
+    if (!analysis || !discovery) return null;
     const rawFeatured = new Map(
       [...featured.newReleases, ...featured.topSellers, ...featured.specials, ...featured.comingSoon].map(
         (item) => [item.appid, item],
@@ -204,7 +263,7 @@ const getVerifiedDiagnosticCandidates = cache(
       (appid) => !analysis.ownedAppids.has(appid),
     ).length;
     const verified = await mapWithConcurrency(
-      [...candidates.values()],
+      [...discovery.facts.values()],
       SPY_CONCURRENCY,
       enrichWithStore,
     );
@@ -217,7 +276,8 @@ const getVerifiedDiagnosticCandidates = cache(
       funnel: {
         filteredFeaturedAppIds: rawFeatured.size,
         outsideOriginalLibraryIds,
-        scoringFactsRetrieved: candidates.size,
+        coplayExpandedOutsideLibraryIds: discovery.coplayExpandedIds,
+        scoringFactsRetrieved: discovery.facts.size,
         storeConfirmedGames: games.length,
       },
     };
@@ -349,28 +409,13 @@ export const getCoplayRecs = cache(async (steamid: string): Promise<CoplayAnchor
   return results.filter((a): a is CoplayAnchor => a !== null && a.recommendations.length > 0);
 });
 
-/** 숨은 보석: 신작 풀 ∪ 리뷰어 라이브러리 동시출현 후보 중 저인지도 후보 */
+/** 숨은 보석: featured ∪ 동시출현 확장 풀(retrieval-v2) 중 저인지도 후보 */
 export const getHiddenGemRecs = cache(async (steamid: string): Promise<Recommendation[] | null> => {
-  const [analysis, candidateFacts, coplay] = await Promise.all([
+  const [analysis, discovery] = await Promise.all([
     getAnalysis(steamid),
-    getCandidateFacts(steamid).catch(() => null),
-    getCoplayRecs(steamid).catch(() => null),
+    getDiscoveryCandidateFacts(steamid).catch(() => null),
   ]);
-  if (!analysis) return null;
-
-  const poolFacts = new Map<number, GameFacts>(candidateFacts ?? []);
-  // 동시출현 섹션이 확보한 후보의 팩트를 재조회 (appid 단위 서버 캐시 히트)
-  if (coplay) {
-    const extraIds = coplay
-      .flatMap((a) => a.recommendations.map((r) => r.appid))
-      .filter((id) => !poolFacts.has(id));
-    const extra = await getManyScoringFacts(
-      extraIds.map((appid) => ({ appid })),
-      SPY_CONCURRENCY,
-    );
-    for (const [id, f] of extra) poolFacts.set(id, f);
-  }
-
-  const recs = rankHiddenGems(analysis.model, [...poolFacts.values()], analysis.ownedAppids, 11);
-  return enrichAndFilter(recs, (id) => poolFacts.get(id), 11);
+  if (!analysis || !discovery) return null;
+  const recs = rankHiddenGems(analysis.model, [...discovery.facts.values()], analysis.ownedAppids, 11);
+  return enrichAndFilter(recs, (id) => discovery.facts.get(id), 11);
 });
