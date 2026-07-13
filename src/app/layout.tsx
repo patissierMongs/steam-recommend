@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     template: "%s · Steam Recommend",
   },
   description:
-    "스팀 라이브러리와 플레이타임, 태그, 리뷰, 동시보유 데이터를 통계적으로 결합해 다음에 할 게임을 추천합니다.",
+    "스팀 누적 플레이 기록, 태그, 리뷰, 리뷰어 공개 라이브러리 동시출현을 사용하는 검증 전 추천 기준선입니다.",
 };
 
 export default function RootLayout({

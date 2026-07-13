@@ -20,9 +20,9 @@ export default function Home({ searchParams }: { searchParams: SearchParams }) {
           다음에 할 게임, <span className="text-accent">데이터</span>가 골라드립니다
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-muted">
-          플레이타임 가중 태그 프로필(TF-IDF), 리뷰의 Wilson 신뢰하한, 같은 게임을 즐긴
-          유저들의 동시보유 lift까지 — 단순 &ldquo;플레이 여부&rdquo;가 아니라 통계적으로
-          의미 있는 신호를 결합해 백로그·신작·숨은 보석을 추천합니다.
+          누적 플레이 기록의 태그 TF-IDF, 리뷰 긍정률의 Wilson 하한, 긍정 리뷰어의
+          공개 라이브러리 동시출현을 사용하는 휴리스틱 기준선입니다. 각 값은 선호·동기·만족도
+          확률이 아닙니다. 시간 분리 데이터가 수집되기 전에는 예측력을 주장하지 않습니다.
         </p>
       </section>
 
@@ -67,16 +67,16 @@ export default function Home({ searchParams }: { searchParams: SearchParams }) {
       <section className="mt-12 grid gap-4 sm:grid-cols-3">
         {[
           {
-            title: "취향 프로필",
-            body: "플레이타임을 log 감쇠·중앙값 정규화·시간 감쇠로 가중해 태그 TF-IDF 벡터를 만듭니다.",
+            title: "Steam 라이브러리 기록 요약",
+            body: "누적시간을 log 감쇠·게임별 중앙값 정규화·시간 감쇠한 태그 TF-IDF 기준선입니다.",
           },
           {
-            title: "통계적 품질 보정",
-            body: "리뷰 긍정률 대신 Wilson 신뢰하한으로 표본 크기를 반영해 순위를 매깁니다.",
+            title: "리뷰 표본 요약",
+            body: "관측된 리뷰 긍정률의 Wilson 하한으로 리뷰 수 차이를 반영합니다. 개인 만족도 확률은 아닙니다.",
           },
           {
-            title: "동시보유 lift",
-            body: "당신의 최애 게임을 좋아한 유저들의 라이브러리에서 기대 대비 과대표된 게임을 찾습니다.",
+            title: "리뷰어 라이브러리 동시출현",
+            body: "최다 플레이 게임의 긍정 리뷰어 공개 라이브러리에서 함께 관측된 후보를 찾는 편향된 표본 신호입니다.",
           },
         ].map((f) => (
           <div key={f.title} className="rounded-xl border border-edge bg-surface p-5">

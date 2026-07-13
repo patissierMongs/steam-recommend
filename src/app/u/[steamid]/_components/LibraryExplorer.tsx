@@ -64,7 +64,7 @@ export function LibraryExplorer({ rows }: { rows: LibraryRow[] }) {
             setQuery(e.target.value);
             setLimit(50);
           }}
-          placeholder="게임 이름 검색"
+          placeholder="항목 이름 검색"
           className="min-w-0 flex-1 rounded-lg border border-edge bg-background px-3 py-2 text-sm outline-none placeholder:text-muted/70 focus:border-accent"
         />
         <select
@@ -83,7 +83,7 @@ export function LibraryExplorer({ rows }: { rows: LibraryRow[] }) {
         <table className="w-full min-w-[480px] text-left text-sm">
           <thead className="bg-raised text-[11px] uppercase tracking-wide text-muted">
             <tr>
-              <th className="px-3 py-2 font-medium">게임</th>
+              <th className="px-3 py-2 font-medium">항목</th>
               <th className="w-28 px-3 py-2 text-right font-medium">플레이타임</th>
               <th className="w-32 px-3 py-2 text-right font-medium">최근 플레이</th>
             </tr>

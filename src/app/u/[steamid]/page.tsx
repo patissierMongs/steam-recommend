@@ -57,7 +57,7 @@ async function Dashboard({ steamid }: { steamid: string }) {
       if (err.kind === "no-key") {
         return (
           <NoticeCard title="라이브러리 연동에 서버 API 키가 필요합니다">
-            로그인과 프로필 조회는 됐지만, 보유 게임·플레이타임을 불러오려면 서버에{" "}
+            로그인과 프로필 조회는 됐지만, 라이브러리 항목·플레이타임을 불러오려면 서버에{" "}
             <strong>STEAM_API_KEY</strong>가 필요합니다(Steam이 라이브러리 조회에 API 키를
             요구합니다). 서버 운영자가{" "}
             <a
@@ -90,49 +90,49 @@ async function Dashboard({ steamid }: { steamid: string }) {
   }
 
   const summary = await getTasteSummary(steamid);
-  // 취향 벡터(태그)가 실제로 있어야 코사인 기반 추천이 의미를 가진다
+  // 플레이 기록 태그 벡터가 있어야 코사인 기준선을 계산할 수 있다.
   const noTaste = analysis.model.profile.size === 0;
 
   return (
     <>
-      {summary && !noTaste ? (
-        <TasteSection summary={summary} persona={summary.persona} clusters={summary.clusters} />
-      ) : null}
-      {noTaste && analysis.degraded ? (
-        <div className="mt-10">
-          <NoticeCard title="게임 데이터를 불러오지 못했습니다">
-            플레이 기록이 있는 게임들의 태그·리뷰 데이터(SteamSpy·상점)를 지금 가져오지
-            못했습니다. 일시적인 외부 API 장애일 수 있으니 잠시 후 새로고침해 주세요.
-          </NoticeCard>
-        </div>
-      ) : noTaste ? (
+      {summary ? <TasteSection summary={summary} /> : null}
+      {noTaste ? (
         <div className="mt-6">
           <EmptyNote>
-            플레이 기록(30분 이상)이 있는 게임이 없어 취향 기반 추천을 만들 수 없습니다.
+            확인된 게임 태그가 없어 태그 유사도만 보류합니다. 리뷰 표본 요약이나 리뷰어
+            라이브러리 동시출현처럼 별도로 확보된 신호는 계속 표시됩니다.
           </EmptyNote>
         </div>
-      ) : (
-        <>
-          <Suspense fallback={<SectionSkeleton title="백로그에서 추천" />}>
-            <BacklogSection steamid={steamid} />
-          </Suspense>
-          <Suspense fallback={<SectionSkeleton title="다시 잡을 게임" />}>
-            <LapsedSection steamid={steamid} />
-          </Suspense>
-          <Suspense fallback={<SectionSkeleton title="이 게임을 즐겼다면" />}>
-            <CoplaySection steamid={steamid} />
-          </Suspense>
-          <Suspense fallback={<SectionSkeleton title="취향에 맞는 신작" />}>
-            <NewReleasesSection steamid={steamid} />
-          </Suspense>
-          <Suspense fallback={<SectionSkeleton title="숨은 보석" />}>
-            <HiddenGemsSection steamid={steamid} />
-          </Suspense>
-        </>
-      )}
+      ) : null}
+      <Section
+        title="실험적 검증 세션"
+        subtitle="태그별 고플레이 게임 두 개를 숨기고 재구성 순위를 확인하는 별도 진단입니다. 추천 정확도나 미래 행동 검증은 아닙니다."
+      >
+        <Link
+          href={`/u/${steamid}/validation/tag-holdout`}
+          className="inline-flex rounded-lg border border-edge bg-surface px-4 py-2 text-sm font-medium text-accent transition hover:border-accent"
+        >
+          태그 마스킹 복원 세션 열기 →
+        </Link>
+      </Section>
+      <Suspense fallback={<SectionSkeleton title="백로그에서 추천" />}>
+        <BacklogSection steamid={steamid} />
+      </Suspense>
+      <Suspense fallback={<SectionSkeleton title="다시 잡을 게임" />}>
+        <LapsedSection steamid={steamid} />
+      </Suspense>
+      <Suspense fallback={<SectionSkeleton title="리뷰어 라이브러리 동시출현" />}>
+        <CoplaySection steamid={steamid} />
+      </Suspense>
+      <Suspense fallback={<SectionSkeleton title="플레이 기록과 가까운 신작" />}>
+        <NewReleasesSection steamid={steamid} />
+      </Suspense>
+      <Suspense fallback={<SectionSkeleton title="숨은 보석" />}>
+        <HiddenGemsSection steamid={steamid} />
+      </Suspense>
       <Section
         title="전체 라이브러리"
-        subtitle={`${analysis.owned.length.toLocaleString()}개 게임 — 검색·정렬할 수 있습니다.`}
+        subtitle={`${analysis.owned.length.toLocaleString()}개 항목 — 검색·정렬할 수 있습니다.`}
       >
         <LibraryExplorer
           rows={analysis.owned.map((g) => ({
@@ -176,9 +176,9 @@ function AnalysisPending() {
     <div className="mt-10">
       <div className="rounded-xl border border-edge bg-surface px-5 py-4 text-sm text-muted">
         라이브러리를 불러와 태그·리뷰 데이터를 분석하는 중입니다… 라이브러리가 크면 첫 분석에
-        수십 초가 걸릴 수 있습니다 (결과는 서버에 캐시됩니다).
+        수십 초가 걸릴 수 있습니다 (게임별 공개 메타데이터만 서버에 캐시됩니다).
       </div>
-      <SectionSkeleton title="취향 프로필" cards={4} />
+      <SectionSkeleton title="Steam 라이브러리 기록 요약" cards={4} />
       <SectionSkeleton title="백로그에서 추천" cards={4} />
     </div>
   );

@@ -1,18 +1,16 @@
 import type { GameFacts, OwnedGame, Recommendation, ScoreBreakdown } from "@/lib/types";
 import { cosineSimilarity, wilsonLowerBound, zScores } from "@/lib/analysis/stats";
 import { tfidfVector, type TasteModel } from "@/lib/analysis/taste";
-import { clusterMatch } from "@/lib/analysis/clusters";
-import { personaFit, type PersonaProfile } from "@/lib/analysis/persona";
-import { isGameType } from "@/lib/steam/apptype";
+import { isPotentialGameType } from "@/lib/steam/apptype";
 
 /**
  * 섹션별 랭킹 로직 (docs/DESIGN.md §5). 전부 순수 함수 — I/O 없음.
  *
- * 신호 구성 (Spotify 공개 기법의 스팀 적용):
- * - taste: 최근접 취향 클러스터와의 코사인 (다중 관심사, max-over-clusters)
- * - quality: 리뷰 Wilson 신뢰하한 (리뷰 없음 = 0)
- * - fit: 플레이 성향(도전/소셜/니치) 적합도 — 태그 내용과 독립적인 행동 신호
- * 태그(취향) 단독 지배를 막기 위해 가중치를 0.40/0.35/0.25로 분산.
+ * 신호 구성:
+ * - tag similarity: 플레이 기록 태그 프로필과 후보의 코사인 유사도
+ * - review summary: 리뷰 긍정 비율의 Wilson 신뢰하한
+ * 다중 관심사, persona 일치도, 강제 novelty 슬롯은 검증 전 제품 경로에서 비활성화했다.
+ * 현재 가중치는 검증 전 휴리스틱 기준선이며 docs/VALIDATION.md의 승격 게이트 대상이다.
  */
 
 const LOW_PLAYTIME_MAX_MIN = 120; // "백로그" = 2시간 미만
@@ -21,10 +19,9 @@ const LAPSED_MAX_MIN = 40 * 60;
 const LAPSED_IDLE_DAYS = 180;
 
 const W_TASTE = 0.4;
-const W_QUALITY = 0.35;
-const W_FIT = 0.25;
+const W_REVIEW = 0.35;
 
-function quality(facts: GameFacts): number | null {
+function reviewLowerBound(facts: GameFacts): number | null {
   const total = facts.positive + facts.negative;
   if (total === 0) return null;
   return wilsonLowerBound(facts.positive, total);
@@ -37,15 +34,13 @@ function matchedTags(model: TasteModel, facts: GameFacts, limit = 3): string[] {
 }
 
 /**
- * 취향 점수: 취향 클러스터 중 가장 잘 맞는 것과의 코사인 (max-over-clusters).
- * 평균 벡터 매칭보다 좁고 날카롭다 — "광범위한 태그 매칭" 문제의 해법.
- * 클러스터가 없으면(플레이 데이터 부족) flat 프로필 코사인으로 폴백.
+ * 플레이 기록 태그 프로필과 후보 태그의 코사인 유사도.
+ * 후보 또는 프로필 태그가 없으면 불일치(0)가 아니라 결측(null)이다.
  */
-function tasteOf(model: TasteModel, facts: GameFacts): { score: number; clusterTags?: string[] } {
-  const vec = model.gameVectors.get(facts.appid) ?? tfidfVector(facts, model.idf);
-  const match = clusterMatch(model.clusters, vec);
-  if (match) return { score: match.score, clusterTags: match.cluster.topTags };
-  return { score: cosineSimilarity(model.profile, vec) };
+function tasteOf(model: TasteModel, facts: GameFacts): number | null {
+  const vec = model.gameVectors.get(facts.appid) ?? tfidfVector(facts, model.idf, model.unseenIdf);
+  if (model.profile.size === 0 || vec.size === 0) return null;
+  return cosineSimilarity(model.profile, vec);
 }
 
 function toRecommendation(
@@ -73,71 +68,72 @@ function toRecommendation(
 
 interface Scored {
   facts: GameFacts;
-  taste: number;
-  clusterTags?: string[];
+  /** 카드에 표시하는 원시 태그 코사인 */
+  taste: number | null;
+  /** surface별 변환을 적용한 랭킹 입력; 원시 코사인과 섞어 표시하지 않음 */
+  rankTaste: number | null;
   wlb: number | null;
-  fit: number;
   extra?: Partial<Recommendation>;
 }
 
 /**
- * 품질 z-점수. 리뷰 없음(null)은 Wilson 신뢰하한 0 — 데이터가 없을 때의 진짜
- * 보수적 하한 — 으로 취급해 분포에 포함한다. WLB는 항상 ≥0이고 리뷰가 하나라도
- * 긍정이면 >0이므로, 리뷰 없는 후보는 품질 축에서 **항상 최저**가 되어
- * 리뷰 있는 어떤 후보도 이기지 못한다(동일 취향 기준). 표시값(breakdown.quality)은
- * null로 유지해 가짜 퍼센트를 보여주지 않는다.
+ * 알려진 값끼리만 z-정규화하고 결측은 평균 기여(0)로 둔다. 결측 자체가
+ * 좋아함/싫어함의 근거가 되지 않게 하는 claim-level abstention 정책이다.
  */
-function qualityZ(wlbs: readonly (number | null)[]): number[] {
-  return zScores(wlbs.map((w) => w ?? 0));
+function optionalZScores(values: readonly (number | null)[]): number[] {
+  const known = values.filter((value): value is number => value !== null);
+  const normalized = zScores(known);
+  let knownIndex = 0;
+  return values.map((value) => (value === null ? 0 : normalized[knownIndex++]));
 }
 
-function scoreOne(model: TasteModel, persona: PersonaProfile, facts: GameFacts, extra?: Partial<Recommendation>): Scored {
-  const t = tasteOf(model, facts);
+function byScoreThenAppid(a: Recommendation, b: Recommendation): number {
+  return b.score - a.score || a.appid - b.appid;
+}
+
+function scoreOne(model: TasteModel, facts: GameFacts, extra?: Partial<Recommendation>): Scored {
+  const taste = tasteOf(model, facts);
   return {
     facts,
-    taste: t.score,
-    clusterTags: t.clusterTags,
-    wlb: quality(facts),
-    fit: personaFit(persona, facts),
+    taste,
+    rankTaste: taste,
+    wlb: reviewLowerBound(facts),
     extra,
   };
 }
 
-/** z-정규화 가중합으로 최종 점수화 (taste 0.40 / quality 0.35 / fit 0.25) */
+/** z-정규화 휴리스틱 기준선. 계수는 아직 제품 타당성이 검증된 가중치가 아니다. */
 function rank(model: TasteModel, scored: Scored[], limit: number): Recommendation[] {
-  if (scored.length === 0) return [];
-  const zTaste = zScores(scored.map((s) => s.taste));
-  const zQual = qualityZ(scored.map((s) => s.wlb));
-  const zFit = zScores(scored.map((s) => s.fit));
-  return scored
+  const eligible = scored.filter((s) => s.taste !== null || s.wlb !== null);
+  if (eligible.length === 0) return [];
+  const zTaste = optionalZScores(eligible.map((s) => s.rankTaste));
+  const zQual = optionalZScores(eligible.map((s) => s.wlb));
+  return eligible
     .map((s, i) => {
-      const score = W_TASTE * zTaste[i] + W_QUALITY * zQual[i] + W_FIT * zFit[i];
+      const score = W_TASTE * zTaste[i] + W_REVIEW * zQual[i];
       return toRecommendation(
         s.facts,
         score,
         {
           tasteMatch: s.taste,
-          quality: s.wlb,
-          personaFit: s.fit,
-          matchedCluster: s.clusterTags,
+          reviewLowerBound: s.wlb,
           matchedTags: matchedTags(model, s.facts),
         },
         s.extra,
       );
     })
-    .sort((a, b) => b.score - a.score)
+    .sort(byScoreThenAppid)
     .slice(0, limit);
 }
 
 /** 게임(본편)만 추천 대상 — DLC/사운드트랙/데모 제외 (appType 미상은 통과) */
 function isRecommendable(facts: GameFacts): boolean {
-  return isGameType(facts.appType);
+  return isPotentialGameType(facts.appType);
 }
 
 /** ① 백로그에서 추천 — 보유 & 사실상 미플레이 */
 export function rankBacklog(
   model: TasteModel,
-  persona: PersonaProfile,
   owned: OwnedGame[],
   factsByAppid: Map<number, GameFacts>,
   limit = 12,
@@ -147,7 +143,7 @@ export function rankBacklog(
     if (g.playtime_forever >= LOW_PLAYTIME_MAX_MIN) continue;
     const facts = factsByAppid.get(g.appid);
     if (!facts || !isRecommendable(facts)) continue;
-    scored.push(scoreOne(model, persona, facts, { playtimeMinutes: g.playtime_forever, lastPlayed: g.rtime_last_played }));
+    scored.push(scoreOne(model, facts, { playtimeMinutes: g.playtime_forever, lastPlayed: g.rtime_last_played }));
   }
   return rank(model, scored, limit);
 }
@@ -155,7 +151,6 @@ export function rankBacklog(
 /** ② 다시 잡을 게임 — 어느 정도 하다가 6개월+ 방치 */
 export function rankLapsed(
   model: TasteModel,
-  persona: PersonaProfile,
   owned: OwnedGame[],
   factsByAppid: Map<number, GameFacts>,
   nowMs: number,
@@ -168,48 +163,55 @@ export function rankLapsed(
     if (!g.rtime_last_played || g.rtime_last_played > cutoff) continue;
     const facts = factsByAppid.get(g.appid);
     if (!facts || !isRecommendable(facts)) continue;
-    // 진행도: 전체 유저 중앙값 대비 남은 여지 (중앙값 미상이면 중립 0.5)
-    const progress =
-      facts.medianPlaytime > 0 ? Math.min(1, g.playtime_forever / facts.medianPlaytime) : 0.5;
-    const s = scoreOne(model, persona, facts, { playtimeMinutes: g.playtime_forever, lastPlayed: g.rtime_last_played });
-    s.taste *= 1 - 0.4 * progress; // 이미 다 뽑아먹은 게임은 감점
+    const s = scoreOne(model, facts, { playtimeMinutes: g.playtime_forever, lastPlayed: g.rtime_last_played });
+    if (facts.medianPlaytime > 0 && s.rankTaste !== null) {
+      const relativeTime = Math.min(1, g.playtime_forever / facts.medianPlaytime);
+      s.rankTaste *= 1 - 0.4 * relativeTime;
+    }
     scored.push(s);
   }
   return rank(model, scored, limit);
 }
 
-/** ③ 신작 추천 — 미보유 featured 후보 풀 (풀 자체가 최신이라 별도 신선도 항 없음) */
-export function rankNewReleases(
+/** ③ 신작 추천 — 현재 라이브러리 밖 featured 후보 풀 (풀 자체가 최신이라 별도 신선도 항 없음) */
+export function rankGeneralCandidates(
   model: TasteModel,
-  persona: PersonaProfile,
   candidates: GameFacts[],
-  ownedAppids: Set<number>,
+  excludedAppids: Set<number>,
   limit = 12,
 ): Recommendation[] {
   const scored: Scored[] = [];
   for (const facts of candidates) {
-    if (ownedAppids.has(facts.appid) || !isRecommendable(facts)) continue;
-    scored.push(scoreOne(model, persona, facts));
+    if (excludedAppids.has(facts.appid) || !isRecommendable(facts)) continue;
+    scored.push(scoreOne(model, facts));
   }
   return rank(model, scored, limit);
 }
 
+/** ③ 신작 추천 — 현재 라이브러리 밖 featured 후보 풀 (풀 자체가 최신이라 별도 신선도 항 없음) */
+export function rankNewReleases(
+  model: TasteModel,
+  candidates: GameFacts[],
+  ownedAppids: Set<number>,
+  limit = 12,
+): Recommendation[] {
+  return rankGeneralCandidates(model, candidates, ownedAppids, limit);
+}
+
 /**
- * ④ 숨은 보석 — 미보유, 인기도 역보정 (docs/DESIGN.md §5).
- * 기하 결합: taste^0.4 · WLB^0.3 · novelty^0.15 · fit^0.15 — 어느 한 축이 0이면
- * 탈락하는 AND 결합. 마지막 슬롯은 BaRT식 ε-greedy 탐험 픽: 점수 순위 밖이지만
- * 품질이 검증된 최고 novelty 후보를 하나 발탁한다(항상 exploit만 하면 필터버블).
+ * ④ 숨은 보석 — 현재 라이브러리 밖 후보, 인기도 역보정 (docs/DESIGN.md §5).
+ * 기하 결합: taste^0.4 · WLB^0.3 · novelty^0.15.
+ * 이 수식도 검증 전 hidden-gem 기준선이며 별도 가설/ablation 대상이다.
  */
 export function rankHiddenGems(
   model: TasteModel,
-  persona: PersonaProfile,
   candidates: GameFacts[],
   ownedAppids: Set<number>,
   limit = 10,
 ): Recommendation[] {
   const MAX_OWNERS = 2_000_000; // 이보다 많이 팔린 게임은 "숨은" 게 아님
   const MIN_REVIEWS = 30; // WLB가 의미를 갖는 최소 표본
-  const pool: { rec: Recommendation; novelty: number }[] = [];
+  const pool: Recommendation[] = [];
   const seen = new Set<number>();
   for (const facts of candidates) {
     if (seen.has(facts.appid)) continue;
@@ -218,44 +220,29 @@ export function rankHiddenGems(
     if (facts.ownersEstimate <= 0 || facts.ownersEstimate > MAX_OWNERS) continue;
     const total = facts.positive + facts.negative;
     if (total < MIN_REVIEWS) continue;
-    const t = tasteOf(model, facts);
-    if (t.score <= 0) continue;
+    const tagSimilarity = tasteOf(model, facts);
+    if (tagSimilarity === null || tagSimilarity <= 0) continue;
     const wlb = wilsonLowerBound(facts.positive, total);
-    const fit = personaFit(persona, facts);
     // novelty ∈ (0,1]: 소유자 3만 이하 ≈ 1, 200만에서 최소
     const novelty = Math.min(
       1,
       Math.log(MAX_OWNERS / Math.max(30_000, facts.ownersEstimate)) / Math.log(MAX_OWNERS / 30_000) + 0.15,
     );
-    const score =
-      Math.pow(t.score, 0.4) * Math.pow(wlb, 0.3) * Math.pow(novelty, 0.15) * Math.pow(fit, 0.15);
-    pool.push({
-      rec: toRecommendation(facts, score, {
-        tasteMatch: t.score,
-        quality: wlb,
-        personaFit: fit,
-        matchedCluster: t.clusterTags,
+    const score = Math.pow(tagSimilarity, 0.4) * Math.pow(wlb, 0.3) * Math.pow(novelty, 0.15);
+    pool.push(
+      toRecommendation(facts, score, {
+        tasteMatch: tagSimilarity,
+        reviewLowerBound: wlb,
         matchedTags: matchedTags(model, facts),
       }),
-      novelty,
-    });
+    );
   }
-  pool.sort((a, b) => b.rec.score - a.rec.score);
-  const top = pool.slice(0, limit).map((p) => p.rec);
-
-  // 탐험 픽: 순위 밖 + 품질 검증(WLB ≥ 0.75) 후보 중 novelty 최고 1개를 마지막 슬롯에
-  const outside = pool.slice(limit).filter((p) => (p.rec.breakdown.quality ?? 0) >= 0.75);
-  if (outside.length > 0 && top.length === limit) {
-    const explorePick = outside.reduce((a, b) => (b.novelty > a.novelty ? b : a));
-    top[top.length - 1] = { ...explorePick.rec, explore: true };
-  }
-  return top;
+  return pool.sort(byScoreThenAppid).slice(0, limit);
 }
 
-/** ⑤ co-play 후보 최종 랭킹 — lift 주도, 취향·품질·성향 보정 */
+/** ⑤ 리뷰어 라이브러리 동시출현 후보 랭킹 — lift 주도, 태그·리뷰 보정 */
 export function rankCoplay(
   model: TasteModel,
-  persona: PersonaProfile,
   candidates: { facts: GameFacts; logLift: number; coCount: number }[],
   ownedAppids: Set<number>,
   limit = 8,
@@ -264,26 +251,22 @@ export function rankCoplay(
   if (pool.length === 0) return [];
   const zLift = zScores(pool.map((c) => c.logLift));
   const tastes = pool.map((c) => tasteOf(model, c.facts));
-  const zTaste = zScores(tastes.map((t) => t.score));
-  const wlbs = pool.map((c) => quality(c.facts));
-  const zQual = qualityZ(wlbs);
-  const fits = pool.map((c) => personaFit(persona, c.facts));
-  const zFit = zScores(fits);
+  const zTaste = optionalZScores(tastes);
+  const wlbs = pool.map((c) => reviewLowerBound(c.facts));
+  const zQual = optionalZScores(wlbs);
   return pool
     .map((c, i) =>
       toRecommendation(
         c.facts,
-        0.5 * zLift[i] + 0.2 * zTaste[i] + 0.15 * zQual[i] + 0.15 * zFit[i],
+        0.5 * zLift[i] + 0.2 * zTaste[i] + 0.15 * zQual[i],
         {
-          tasteMatch: tastes[i].score,
-          quality: wlbs[i],
+          tasteMatch: tastes[i],
+          reviewLowerBound: wlbs[i],
           lift: Math.exp(c.logLift),
-          personaFit: fits[i],
-          matchedCluster: tastes[i].clusterTags,
           matchedTags: matchedTags(model, c.facts),
         },
       ),
     )
-    .sort((a, b) => b.score - a.score)
+    .sort(byScoreThenAppid)
     .slice(0, limit);
 }

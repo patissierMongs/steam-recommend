@@ -64,7 +64,7 @@ export async function getPlayerSummary(steamid: string): Promise<PlayerSummary |
 }
 
 /**
- * 보유 게임 + 플레이타임. 대상 프로필의 "게임 상세" 공개 설정이 꺼져 있으면
+ * Steam 라이브러리 항목 + 플레이타임. 대상 프로필의 "게임 상세" 공개 설정이 꺼져 있으면
  * Steam이 빈 response를 반환한다 — null로 구분해 돌려준다.
  */
 export async function getOwnedGames(steamid: string): Promise<OwnedGame[] | null> {

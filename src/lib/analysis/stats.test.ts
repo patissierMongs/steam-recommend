@@ -103,8 +103,8 @@ describe("recencyDecay", () => {
     expect(recencyDecay(tenYearsAgo, now)).toBe(0.35);
   });
 
-  it("기록이 없으면 하한", () => {
-    expect(recencyDecay(0, now)).toBe(0.35);
+  it("기록이 없으면 감쇠를 추론하지 않는다", () => {
+    expect(recencyDecay(0, now)).toBe(1);
   });
 });
 
