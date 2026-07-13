@@ -131,6 +131,34 @@ function isRecommendable(facts: GameFacts): boolean {
   return isPotentialGameType(facts.appType);
 }
 
+/**
+ * 백로그 랭킹 적격성 — Stage 1 impression의 candidate universe 기록이 랭커와
+ * 어긋나지 않도록 랭커 내부와 recorder가 같은 술어를 공유한다.
+ */
+export function backlogEligible(game: OwnedGame, facts: GameFacts | undefined): facts is GameFacts {
+  return (
+    game.playtime_forever < LOW_PLAYTIME_MAX_MIN && facts !== undefined && isRecommendable(facts)
+  );
+}
+
+/** 다시 잡을 게임 랭킹 적격성 (backlogEligible과 동일한 공유 목적) */
+export function lapsedEligible(
+  game: OwnedGame,
+  facts: GameFacts | undefined,
+  nowMs: number,
+): facts is GameFacts {
+  const cutoff = nowMs / 1000 - LAPSED_IDLE_DAYS * 86400;
+  return (
+    game.playtime_forever >= LAPSED_MIN_MIN &&
+    game.playtime_forever <= LAPSED_MAX_MIN &&
+    game.rtime_last_played !== undefined &&
+    game.rtime_last_played > 0 &&
+    game.rtime_last_played <= cutoff &&
+    facts !== undefined &&
+    isRecommendable(facts)
+  );
+}
+
 /** ① 백로그에서 추천 — 보유 & 사실상 미플레이 */
 export function rankBacklog(
   model: TasteModel,
@@ -140,9 +168,8 @@ export function rankBacklog(
 ): Recommendation[] {
   const scored: Scored[] = [];
   for (const g of owned) {
-    if (g.playtime_forever >= LOW_PLAYTIME_MAX_MIN) continue;
     const facts = factsByAppid.get(g.appid);
-    if (!facts || !isRecommendable(facts)) continue;
+    if (!backlogEligible(g, facts)) continue;
     scored.push(scoreOne(model, facts, { playtimeMinutes: g.playtime_forever, lastPlayed: g.rtime_last_played }));
   }
   return rank(model, scored, limit);
@@ -156,13 +183,10 @@ export function rankLapsed(
   nowMs: number,
   limit = 8,
 ): Recommendation[] {
-  const cutoff = nowMs / 1000 - LAPSED_IDLE_DAYS * 86400;
   const scored: Scored[] = [];
   for (const g of owned) {
-    if (g.playtime_forever < LAPSED_MIN_MIN || g.playtime_forever > LAPSED_MAX_MIN) continue;
-    if (!g.rtime_last_played || g.rtime_last_played > cutoff) continue;
     const facts = factsByAppid.get(g.appid);
-    if (!facts || !isRecommendable(facts)) continue;
+    if (!lapsedEligible(g, facts, nowMs)) continue;
     const s = scoreOne(model, facts, { playtimeMinutes: g.playtime_forever, lastPlayed: g.rtime_last_played });
     if (facts.medianPlaytime > 0 && s.rankTaste !== null) {
       const relativeTime = Math.min(1, g.playtime_forever / facts.medianPlaytime);
