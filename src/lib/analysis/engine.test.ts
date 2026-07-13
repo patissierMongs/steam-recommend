@@ -104,16 +104,20 @@ describe("태그 없는 팩트 → 취향 벡터 비어있음 (장애 판정 근
   });
 });
 
-describe("rankNewReleases 리뷰 없는 후보는 확인된 고품질 후보를 이기지 못한다", () => {
+describe("rankNewReleases 리뷰 없는 후보는 확인된 품질 후보를 이기지 못한다", () => {
   const model = buildTasteModel(library, factsMap, NOW);
-  it("동일 취향이면 리뷰 있는(고 Wilson) 게임이 리뷰 없는 게임보다 위", () => {
-    const reviewed = facts(200, "Reviewed Good", { tags: { Roguelike: 500 }, positive: 4000, negative: 100 });
-    const unreviewed = facts(201, "No Reviews", { tags: { Roguelike: 500 }, positive: 0, negative: 0 });
-    const recs = rankNewReleases(model, [reviewed, unreviewed], new Set());
+  // 리뷰 있는 후보가 2개 이상이어도(저품질 z < -0.5여도) 리뷰 없음은 최저여야 한다
+  it("동일 취향에서 고품질 > 저품질 > 리뷰없음 순 (WLB 0 정책)", () => {
+    const highQ = facts(200, "High Q", { tags: { Roguelike: 500 }, positive: 4000, negative: 100 });
+    const lowQ = facts(201, "Low Q", { tags: { Roguelike: 500 }, positive: 60, negative: 240 }); // 20% 긍정
+    const noRev = facts(202, "No Reviews", { tags: { Roguelike: 500 }, positive: 0, negative: 0 });
+    const recs = rankNewReleases(model, [highQ, lowQ, noRev], new Set());
     const names = recs.map((r) => r.name);
-    expect(names.indexOf("Reviewed Good")).toBeLessThan(names.indexOf("No Reviews"));
-    // 리뷰 없는 후보의 품질은 null로 표기된다
+    expect(names).toEqual(["High Q", "Low Q", "No Reviews"]);
+    // 리뷰 없는 후보의 품질은 null로 표기(가짜 퍼센트 없음)
     expect(recs.find((r) => r.name === "No Reviews")?.breakdown.quality).toBeNull();
+    // 확인된 저품질(WLB>0)은 리뷰 없음보다 위 — 이것이 -0.5 센티넬이 못 주던 보장
+    expect(names.indexOf("Low Q")).toBeLessThan(names.indexOf("No Reviews"));
   });
 });
 

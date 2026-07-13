@@ -64,7 +64,7 @@ export async function CoplaySection({ steamid }: { steamid: string }) {
   return (
     <Section
       title="이 게임을 즐겼다면"
-      subtitle="당신의 최다 플레이 게임을 긍정 리뷰한 유저들의 공개 라이브러리에서, 전체 보급률 대비 과대표된(lift) 미보유 게임을 찾았습니다."
+      subtitle="당신의 최다 플레이 게임을 긍정 리뷰한 유저들의 공개 라이브러리에서, 전역 인기도로 완만히 보정해 자주 함께 플레이되는 미보유 게임을 골랐습니다(표본 기반 근사)."
     >
       <div className="space-y-8">
         {anchors.map((anchor) => (

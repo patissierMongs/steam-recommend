@@ -52,25 +52,21 @@ interface Scored {
 }
 
 /**
- * 리뷰 있는 후보들로만 z-분포를 만든다 — null을 0으로 섞으면 분포 평균/분산이
- * 왜곡돼 리뷰 있는 후보의 z까지 오염된다.
- * 리뷰 없음(null)은 z=0(평균)이 아니라 약한 음수 값을 준다: "품질 미검증"을
- * 평균 품질로 대우하면 신작 섹션에서 리뷰 없는 게임이 확인된 Wilson 점수의 게임을
- * 이길 수 있다. 소표본 과대평가 방지 철학을 데이터 없음까지 일관 적용한다.
+ * 품질 z-점수. 리뷰 없음(null)은 Wilson 신뢰하한 0 — 데이터가 없을 때의 진짜
+ * 보수적 하한 — 으로 취급해 분포에 포함한다. WLB는 항상 ≥0이고 리뷰가 하나라도
+ * 긍정이면 >0이므로, 리뷰 없는 후보는 품질 축에서 **항상 최저**가 되어
+ * 리뷰 있는 어떤 후보도 이기지 못한다(동일 취향 기준). 표시값(breakdown.quality)은
+ * null로 유지해 가짜 퍼센트를 보여주지 않는다.
  */
-const UNKNOWN_QUALITY_Z = -0.5; // 리뷰 있는 후보 평균보다 0.5σ 아래
-function zScoresWithNulls(values: readonly (number | null)[]): number[] {
-  const present = values.filter((v): v is number => v !== null);
-  const z = zScores(present);
-  let j = 0;
-  return values.map((v) => (v === null ? UNKNOWN_QUALITY_Z : z[j++]));
+function qualityZ(wlbs: readonly (number | null)[]): number[] {
+  return zScores(wlbs.map((w) => w ?? 0));
 }
 
-/** z-정규화 가중합으로 최종 점수화. wlb가 null인 후보는 품질 항 0(중립) 처리. */
+/** z-정규화 가중합으로 최종 점수화. 리뷰 없음은 위 qualityZ 정책(WLB 0)으로 처리. */
 function rank(model: TasteModel, scored: Scored[], wTaste: number, wQuality: number, limit: number): Recommendation[] {
   if (scored.length === 0) return [];
   const zTaste = zScores(scored.map((s) => s.taste));
-  const zQual = zScoresWithNulls(scored.map((s) => s.wlb));
+  const zQual = qualityZ(scored.map((s) => s.wlb));
   return scored
     .map((s, i) => {
       const score = wTaste * zTaste[i] + wQuality * zQual[i];
@@ -214,7 +210,7 @@ export function rankCoplay(
   const tastes = pool.map((c) => tasteOf(model, c.facts));
   const zTaste = zScores(tastes);
   const wlbs = pool.map((c) => quality(c.facts));
-  const zQual = zScoresWithNulls(wlbs);
+  const zQual = qualityZ(wlbs);
   return pool
     .map((c, i) =>
       toRecommendation(c.facts, 0.55 * zLift[i] + 0.3 * zTaste[i] + 0.15 * zQual[i], {

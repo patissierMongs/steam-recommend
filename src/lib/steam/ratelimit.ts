@@ -32,7 +32,7 @@ function backoffMs(attempt: number): number {
 }
 
 /** Retry-After 헤더 → 대기 ms. 초(정수)와 HTTP-date를 모두 처리, 상한 30초 */
-function retryAfterMs(header: string | null): number | null {
+export function retryAfterMs(header: string | null): number | null {
   if (!header) return null;
   const secs = Number(header);
   if (Number.isFinite(secs) && secs >= 0) return Math.min(secs * 1000, 30_000);
