@@ -1,6 +1,7 @@
 import type { GameFacts, OwnedGame, TasteProfileSummary, TasteTag } from "@/lib/types";
 import { herfindahlIndex, recencyDecay } from "@/lib/analysis/stats";
 import { buildTasteClusters, type TasteCluster } from "@/lib/analysis/clusters";
+import { looksLikeNonGame } from "@/lib/steam/apptype";
 
 /** 취향 프로필: 사용자 벡터 + 게임별 TF-IDF 벡터 + 선호 가중치 (docs/DESIGN.md §1–2) */
 export interface TasteModel {
@@ -76,7 +77,9 @@ export function buildTasteModel(
   factsByAppid: Map<number, GameFacts>,
   nowMs: number,
 ): TasteModel {
-  const idf = buildIdf(factsByAppid.values());
+  // P8: IDF 코퍼스에서도 비-게임 제외 (소프트웨어 태그가 IDF를 왜곡하지 않게)
+  const gameFacts = [...factsByAppid.values()].filter((f) => !looksLikeNonGame(f));
+  const idf = buildIdf(gameFacts);
 
   const gameVectors = new Map<number, Map<string, number>>();
   const preferenceWeights = new Map<number, number>();
@@ -87,6 +90,7 @@ export function buildTasteModel(
   for (const game of owned) {
     const facts = factsByAppid.get(game.appid);
     if (!facts) continue;
+    if (looksLikeNonGame(facts)) continue; // P8: Software/Utilities/DLC는 취향에서 제외
     const vec = tfidfVector(facts, idf);
     gameVectors.set(game.appid, vec);
 

@@ -233,6 +233,58 @@ describe("플레이어 성향 (persona)", () => {
     const p = buildPersona(lib, fm, buildTasteModel(lib, fm, NOW));
     const hardSolo = facts(10, "hard solo", { tags: { Difficult: 500, Singleplayer: 400 }, ownersEstimate: 100_000 });
     const casualParty = facts(11, "casual party", { tags: { Casual: 600, Multiplayer: 500, "4 Player Local": 200 }, ownersEstimate: 100_000 });
-    expect(personaFit(p, hardSolo)).toBeGreaterThan(personaFit(p, casualParty));
+    expect(personaFit(p, hardSolo).value!).toBeGreaterThan(personaFit(p, casualParty).value!);
+  });
+});
+
+describe("P8 — 비게임(Software) 제외", () => {
+  it("Wallpaper Engine 류 소프트웨어는 취향 프로필/persona에 안 들어간다", () => {
+    const lib = [owned(1, "Rogue", 3000), owned(2, "Wallpaper Engine", 5000)];
+    const fm = new Map<number, GameFacts>([
+      [1, facts(1, "Rogue", { tags: { Roguelike: 800, Action: 300 } })],
+      [2, facts(2, "Wallpaper Engine", { tags: { Utilities: 900, Software: 500, Design: 100 }, genres: ["Utilities"], appType: "game" })],
+    ]);
+    const model = buildTasteModel(lib, fm, NOW);
+    // 소프트웨어는 취향 벡터/선호가중치에서 제외
+    expect(model.preferenceWeights.has(2)).toBe(false);
+    expect(model.preferenceWeights.has(1)).toBe(true);
+    // 프로필 상위 태그에 Utilities/Software가 없다
+    expect(model.topTags.map((t) => t.tag)).not.toContain("Utilities");
+  });
+});
+
+describe("P2 — personaFit 결측 처리 (미상을 상향하지 않음)", () => {
+  const lib = [owned(1, "Souls A", 6000), owned(2, "Souls B", 4000)];
+  const fm = new Map<number, GameFacts>([
+    [1, facts(1, "Souls A", { tags: { Difficult: 600, "Souls-like": 400, Singleplayer: 500 } })],
+    [2, facts(2, "Souls B", { tags: { Difficult: 500, Singleplayer: 400 } })],
+  ]);
+  const p = buildPersona(lib, fm, buildTasteModel(lib, fm, NOW));
+
+  it("태그·소유자 정보가 전무한 후보는 fit=null, confidence=0", () => {
+    const empty = facts(99, "No Data", { tags: {}, ownersEstimate: 0 });
+    const r = personaFit(p, empty);
+    expect(r.value).toBeNull();
+    expect(r.confidence).toBe(0);
+  });
+
+  it("일부 축만 알면 그 축으로만 정규화하고 confidence는 부분", () => {
+    // 태그(도전/소셜)는 없고 소유자만 있음 → niche 축만 판정
+    const partial = facts(98, "Partial", { tags: {}, ownersEstimate: 100_000 });
+    const r = personaFit(p, partial);
+    expect(r.value).not.toBeNull();
+    expect(r.confidence).toBeCloseTo(0.25, 5); // niche weight
+  });
+
+  it("랭킹: 데이터 없는 후보가 성향으로 상향되지 않는다", () => {
+    // 성향에 잘 맞는 후보 vs 데이터 전무 후보 (취향·품질 동일 조건에서 비교)
+    const good = facts(10, "Good Fit", { tags: { Difficult: 500, Singleplayer: 400 }, positive: 1000, negative: 100, ownersEstimate: 100_000 });
+    const nodata = facts(11, "No Data", { tags: {}, positive: 1000, negative: 100, ownersEstimate: 0 });
+    const recs = rankNewReleases(buildTasteModel(lib, fm, NOW), p, [good, nodata], new Set());
+    const names = recs.map((r) => r.name);
+    // 데이터 없는 후보의 성향 배지는 안 뜬다
+    expect(recs.find((r) => r.name === "No Data")?.breakdown.personaFit).toBeUndefined();
+    // 성향 맞는 후보가 아래로 밀리지 않는다 (동일 품질에서 fit 우위)
+    expect(names.indexOf("Good Fit")).toBeLessThanOrEqual(names.indexOf("No Data"));
   });
 });
