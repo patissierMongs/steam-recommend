@@ -76,7 +76,7 @@ interface Scored {
   taste: number;
   clusterTags?: string[];
   wlb: number | null;
-  fit: number;
+  fit: number | null; // null = 성향 판정 불가 (P2: 중립 처리, 상향 금지)
   extra?: Partial<Recommendation>;
 }
 
@@ -91,6 +91,18 @@ function qualityZ(wlbs: readonly (number | null)[]): number[] {
   return zScores(wlbs.map((w) => w ?? 0));
 }
 
+/**
+ * 적합도 z-점수 (P2). 품질과 달리 미상 적합도는 "나쁨"이 아니라 **판정 불가 = 중립**이다.
+ * 알려진 값들로만 분포를 만들고, 미상 후보는 z=0(코호트 평균)을 준다 — 상향도 하향도 없음.
+ * (예전엔 미상을 0.75로 채워 데이터 없는 후보를 평균 위로 끌어올렸다.)
+ */
+function fitZ(fits: readonly (number | null)[]): number[] {
+  const present = fits.filter((f): f is number => f !== null);
+  const z = zScores(present);
+  let j = 0;
+  return fits.map((f) => (f === null ? 0 : z[j++]));
+}
+
 function scoreOne(model: TasteModel, persona: PersonaProfile, facts: GameFacts, extra?: Partial<Recommendation>): Scored {
   const t = tasteOf(model, facts);
   return {
@@ -98,7 +110,7 @@ function scoreOne(model: TasteModel, persona: PersonaProfile, facts: GameFacts, 
     taste: t.score,
     clusterTags: t.clusterTags,
     wlb: quality(facts),
-    fit: personaFit(persona, facts),
+    fit: personaFit(persona, facts).value,
     extra,
   };
 }
@@ -108,7 +120,7 @@ function rank(model: TasteModel, scored: Scored[], limit: number): Recommendatio
   if (scored.length === 0) return [];
   const zTaste = zScores(scored.map((s) => s.taste));
   const zQual = qualityZ(scored.map((s) => s.wlb));
-  const zFit = zScores(scored.map((s) => s.fit));
+  const zFit = fitZ(scored.map((s) => s.fit));
   return scored
     .map((s, i) => {
       const score = W_TASTE * zTaste[i] + W_QUALITY * zQual[i] + W_FIT * zFit[i];
@@ -118,7 +130,7 @@ function rank(model: TasteModel, scored: Scored[], limit: number): Recommendatio
         {
           tasteMatch: s.taste,
           quality: s.wlb,
-          personaFit: s.fit,
+          personaFit: s.fit ?? undefined, // 미상이면 배지 미표시
           matchedCluster: s.clusterTags,
           matchedTags: matchedTags(model, s.facts),
         },
@@ -227,13 +239,15 @@ export function rankHiddenGems(
       1,
       Math.log(MAX_OWNERS / Math.max(30_000, facts.ownersEstimate)) / Math.log(MAX_OWNERS / 30_000) + 0.15,
     );
+    // 적합도 미상은 기하곱에서 중립 0.5 (0을 곱해 후보를 탈락시키지 않음, 그러나 상향도 안 함)
+    const fitTerm = fit.value ?? 0.5;
     const score =
-      Math.pow(t.score, 0.4) * Math.pow(wlb, 0.3) * Math.pow(novelty, 0.15) * Math.pow(fit, 0.15);
+      Math.pow(t.score, 0.4) * Math.pow(wlb, 0.3) * Math.pow(novelty, 0.15) * Math.pow(fitTerm, 0.15);
     pool.push({
       rec: toRecommendation(facts, score, {
         tasteMatch: t.score,
         quality: wlb,
-        personaFit: fit,
+        personaFit: fit.value ?? undefined,
         matchedCluster: t.clusterTags,
         matchedTags: matchedTags(model, facts),
       }),
@@ -267,8 +281,8 @@ export function rankCoplay(
   const zTaste = zScores(tastes.map((t) => t.score));
   const wlbs = pool.map((c) => quality(c.facts));
   const zQual = qualityZ(wlbs);
-  const fits = pool.map((c) => personaFit(persona, c.facts));
-  const zFit = zScores(fits);
+  const fits = pool.map((c) => personaFit(persona, c.facts).value);
+  const zFit = fitZ(fits);
   return pool
     .map((c, i) =>
       toRecommendation(
@@ -278,7 +292,7 @@ export function rankCoplay(
           tasteMatch: tastes[i].score,
           quality: wlbs[i],
           lift: Math.exp(c.logLift),
-          personaFit: fits[i],
+          personaFit: fits[i] ?? undefined,
           matchedCluster: tastes[i].clusterTags,
           matchedTags: matchedTags(model, c.facts),
         },

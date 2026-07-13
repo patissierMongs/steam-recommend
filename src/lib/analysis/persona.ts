@@ -1,6 +1,7 @@
 import type { GameFacts, OwnedGame } from "@/lib/types";
 import { herfindahlIndex } from "@/lib/analysis/stats";
 import { MIN_EVIDENCE_MINUTES, type TasteModel } from "@/lib/analysis/taste";
+import { looksLikeNonGame } from "@/lib/steam/apptype";
 
 /**
  * 플레이어 성향(persona) 프로파일링 — 태그 "내용"이 아니라 플레이 "행동"에서
@@ -92,7 +93,12 @@ export function buildPersona(
   factsByAppid: Map<number, GameFacts>,
   model: TasteModel,
 ): PersonaProfile {
-  const played = owned.filter((g) => g.playtime_forever >= MIN_EVIDENCE_MINUTES);
+  // P8: 비-게임(Software/Utilities) 제외 (팩트 없는 게임은 판정 불가라 유지)
+  const played = owned.filter((g) => {
+    if (g.playtime_forever < MIN_EVIDENCE_MINUTES) return false;
+    const facts = factsByAppid.get(g.appid);
+    return !facts || !looksLikeNonGame(facts);
+  });
   const weighted = played
     .map((g) => ({ g, facts: factsByAppid.get(g.appid), w: model.preferenceWeights.get(g.appid) ?? 0 }))
     .filter((x) => x.w > 0);
@@ -155,21 +161,35 @@ function nameArchetype(d: Omit<PersonaProfile, "archetype" | "archetypeDescripti
   };
 }
 
+export interface FitResult {
+  /** 알려진 축으로만 정규화한 적합도 (0..1). 판정 가능한 축이 없으면 null */
+  value: number | null;
+  /** 판정에 쓰인 축 가중치 합 (0..1) — P3 confidence */
+  confidence: number;
+}
+
 /**
- * 후보 게임과 사용자 성향의 적합도 (0..1).
+ * 후보 게임과 사용자 성향의 적합도 (P2·P3 준수).
  * 태그 내용 유사도와 독립적인 신호: 도전/소셜/니치 축에서 얼마나 "그 사람답게"
- * 플레이할 만한 게임인가. 후보 쪽 값이 미상인 축은 중립(차이 0.25) 처리.
+ * 플레이할 만한 게임인가.
+ *
+ * 미상 축은 **평균으로 치환하지 않고 제외**한다(예전엔 diff=0.25로 75% 호환 처리해
+ * 데이터 없는 후보가 일괄 고fit을 받는 버그가 있었다 — 이슈 #2 §3). 알려진 축이
+ * 하나도 없으면 value=null, confidence=0을 반환하고 랭킹에서 중립 처리한다.
  */
-export function personaFit(persona: PersonaProfile, facts: GameFacts): number {
+export function personaFit(persona: PersonaProfile, facts: GameFacts): FitResult {
   const axes: { user: number; cand: number | null; weight: number }[] = [
     { user: persona.challenge, cand: challengeOf(facts), weight: 0.4 },
     { user: persona.social, cand: socialOf(facts), weight: 0.35 },
     { user: persona.niche, cand: nicheOf(facts), weight: 0.25 },
   ];
   let score = 0;
+  let known = 0;
   for (const { user, cand, weight } of axes) {
-    const diff = cand === null ? 0.25 : Math.abs(user - cand);
-    score += weight * (1 - diff);
+    if (cand === null) continue; // 미상 축 제외 (P2: 평균 치환 금지)
+    score += weight * (1 - Math.abs(user - cand));
+    known += weight;
   }
-  return clamp01(score);
+  if (known === 0) return { value: null, confidence: 0 };
+  return { value: clamp01(score / known), confidence: known };
 }

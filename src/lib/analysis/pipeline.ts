@@ -99,11 +99,10 @@ export const getTasteSummary = cache(async (steamid: string) => {
   return {
     ...summarizeTaste(analysis.owned, analysis.factsByAppid, analysis.model),
     persona: analysis.persona,
-    clusters: analysis.model.clusters.map((c) => ({
-      topTags: c.topTags,
-      share: c.share,
-      games: c.games,
-    })),
+    // 추천 매칭에서 사실상 무시되는 5% 미만 클러스터는 UI에 노출하지 않음 (이슈 #2 §1)
+    clusters: analysis.model.clusters
+      .filter((c) => c.share >= 0.05)
+      .map((c) => ({ topTags: c.topTags, share: c.share, games: c.games })),
   };
 });
 

@@ -29,7 +29,9 @@ const PERSONA_DIMS: { key: keyof Omit<PersonaProfile, "archetype" | "archetypeDe
 function PersonaCard({ persona }: { persona: PersonaProfile }) {
   return (
     <div className="rounded-lg border border-edge bg-surface p-4">
-      <p className="text-[11px] text-muted">플레이 성향 분석</p>
+      <p className="text-[11px] text-muted" title="심리 성격 진단이 아니라 플레이 기록에서 계산한 행동 패턴 요약입니다">
+        플레이 패턴 요약
+      </p>
       <p className="mt-1 text-lg font-bold text-accent">{persona.archetype}</p>
       <p className="mt-1 text-xs leading-5 text-muted">{persona.archetypeDescription}</p>
       <ul className="mt-4 space-y-2.5">
