@@ -162,6 +162,8 @@ This is a **known-positive reconstruction probe**, not an offline accuracy estim
 
 Interpretation: beating random alone is weak. Matching tag-only, review-only, or popularity-only shows only that the corresponding public item facts reconstruct selected known positives. A top-two result similar to the third/fourth-place arm weakens the claim that high playtime itself is special. Consistent incremental recovery over every baseline on this one account means only that H-013 is not contradicted as an implementation diagnostic; it still requires multi-user longitudinal evaluation before any product claim or signal promotion.
 
+First real execution (2026-07-13, supplied account, fingerprints in `ANALYSIS_QUALITY.md`): every fold was saturated at a complete-case pool of 5 candidates, so Hit@K/Recall@K/NDCG were withheld and only rank percentile/MRR were interpretable. Tag-only re-ranked the masked top-played positives best (rank-1 48%, MRR 0.972), but the top-two arm (48%) was indistinguishable from the third/fourth-place sensitivity arm (49%), the combined legacy formula did not beat the tag-only or popularity-only baselines, and the union arm collapsed to an empty profile. Per the interpretation above this weakens the high-playtime-is-special claim and promotes no signal; the run only shows H-013 is not contradicted as an implementation diagnostic on this one account.
+
 ## Signal promotion gate
 
 A signal enters ranking only when all relevant checks pass:
