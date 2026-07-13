@@ -52,7 +52,7 @@ A로 교체.** 스키마·인터페이스가 같으므로 교체 비용이 낮�
 
 사용자 후속 질문 "캐시가 아니라 아예 스팀의 10만+ 게임 데이터를 받아올 수는 없나"에
 대한 답: **가능하고, 구현·실증했다** (`src/lib/catalog/store.ts` +
-`scripts/ingest-catalog.ts`, node:sqlite 실험 API — 외부 의존성 없음).
+`scripts/ingest-catalog.ts`, node:sqlite 실험 API — 외부 의존성 없음, **Node ≥22.13 필요**; CI도 Node 22로 상향).
 
 실측 결과 (이 컨테이너, 실제 실행):
 
