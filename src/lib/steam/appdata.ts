@@ -3,7 +3,7 @@ import { cacheLife, cacheTag } from "next/cache";
 import type { AppDetails, GameFacts, SteamSpyApp } from "@/lib/types";
 import { parseOwnersMidpoint } from "@/lib/analysis/stats";
 import { mapWithConcurrency } from "@/lib/concurrency";
-import { politeFetch, throttleSteamSpy, throttleStore } from "@/lib/steam/ratelimit";
+import { politeFetch, readJson, throttleSteamSpy, throttleStore } from "@/lib/steam/ratelimit";
 
 export { isGameType } from "@/lib/steam/apptype";
 
@@ -26,7 +26,7 @@ export async function getSpyApp(appid: number): Promise<SteamSpyApp | null> {
     throttle: throttleSteamSpy,
   });
   if (!res.ok) throw new Error(`SteamSpy HTTP ${res.status} (appid ${appid})`);
-  const data = (await res.json()) as SteamSpyApp & { name: string | null; tags: unknown };
+  const data = await readJson<SteamSpyApp & { name: string | null; tags: unknown }>(res, `SteamSpy ${appid}`);
   if (!data || data.name === null || data.name === undefined) return null;
   // 태그 없음은 빈 배열([])로 오므로 객체로 정규화
   const tags =
@@ -52,7 +52,7 @@ export async function getStoreApp(appid: number): Promise<AppDetails | null> {
     throttle: throttleStore,
   });
   if (!res.ok) throw new Error(`appdetails HTTP ${res.status} (appid ${appid})`);
-  const body = (await res.json()) as Record<string, { success: boolean; data?: AppDetails }>;
+  const body = await readJson<Record<string, { success: boolean; data?: AppDetails }>>(res, `appdetails ${appid}`);
   const entry = body?.[String(appid)];
   if (!entry?.success || !entry.data) return null; // 상점에서 내려간 앱 — 확정적 없음
   const d = entry.data;

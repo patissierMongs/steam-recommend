@@ -95,7 +95,9 @@ async function Dashboard({ steamid }: { steamid: string }) {
 
   return (
     <>
-      {summary && !noTaste ? <TasteSection summary={summary} /> : null}
+      {summary && !noTaste ? (
+        <TasteSection summary={summary} persona={summary.persona} clusters={summary.clusters} />
+      ) : null}
       {noTaste && analysis.degraded ? (
         <div className="mt-10">
           <NoticeCard title="게임 데이터를 불러오지 못했습니다">

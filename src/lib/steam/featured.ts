@@ -1,6 +1,7 @@
 import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import type { FeaturedItem } from "@/lib/types";
+import { readJson } from "@/lib/steam/ratelimit";
 
 /** 신작/인기/할인 후보 풀 — 사용자 무관, 1시간 캐시 */
 
@@ -38,7 +39,7 @@ export async function getFeaturedPool(): Promise<FeaturedPool> {
     signal: AbortSignal.timeout(12_000),
   });
   if (!res.ok) throw new Error(`featuredcategories HTTP ${res.status}`);
-  const data = (await res.json()) as FeaturedCategoriesResponse;
+  const data = await readJson<FeaturedCategoriesResponse>(res, "featuredcategories");
   return {
     newReleases: pick(data.new_releases?.items),
     topSellers: pick(data.top_sellers?.items),

@@ -6,6 +6,7 @@ import { enrichWithStore, getManyScoringFacts, isGameType } from "@/lib/steam/ap
 import { getFeaturedPool } from "@/lib/steam/featured";
 import { getCoplaySample, STEAM_POPULATION } from "@/lib/steam/coplay";
 import { buildTasteModel, MIN_EVIDENCE_MINUTES, summarizeTaste, type TasteModel } from "@/lib/analysis/taste";
+import { buildPersona, type PersonaProfile } from "@/lib/analysis/persona";
 import {
   rankBacklog,
   rankCoplay,
@@ -36,6 +37,7 @@ export interface LibraryAnalysis {
   ownedAppids: Set<number>;
   factsByAppid: Map<number, GameFacts>;
   model: TasteModel;
+  persona: PersonaProfile;
   nowMs: number;
   /** 라이브러리에 30분+ 플레이한 게임이 있는데 메타데이터를 하나도 못 받은 상태
    * (SteamSpy/상점 장애) — "무플레이"와 구분해 UI에서 다르게 안내한다. */
@@ -74,18 +76,35 @@ export const getAnalysis = cache(async (steamid: string): Promise<LibraryAnalysi
 
   const factsByAppid = await getManyScoringFacts([...fetchSet.values()], SPY_CONCURRENCY);
   const model = buildTasteModel(owned, factsByAppid, nowMs);
+  const persona = buildPersona(owned, factsByAppid, model);
   // 취향 벡터(태그) 확보 여부로 판단한다. 팩트가 있어도 태그가 비면 model.profile은
   // 비므로(preferenceWeights만 채워짐) 코사인이 전부 0이 되어 취향 추천이 무의미해진다.
   // 30분+ 플레이 게임이 있는데 취향 벡터가 비면 데이터 장애/태그 부재로 간주.
   const hasPlayedGames = owned.some((g) => g.playtime_forever >= MIN_EVIDENCE_MINUTES);
   const degraded = hasPlayedGames && model.profile.size === 0;
-  return { owned, ownedAppids: new Set(owned.map((g) => g.appid)), factsByAppid, model, nowMs, degraded };
+  return {
+    owned,
+    ownedAppids: new Set(owned.map((g) => g.appid)),
+    factsByAppid,
+    model,
+    persona,
+    nowMs,
+    degraded,
+  };
 });
 
 export const getTasteSummary = cache(async (steamid: string) => {
   const analysis = await getAnalysis(steamid);
   if (!analysis) return null;
-  return summarizeTaste(analysis.owned, analysis.factsByAppid, analysis.model);
+  return {
+    ...summarizeTaste(analysis.owned, analysis.factsByAppid, analysis.model),
+    persona: analysis.persona,
+    clusters: analysis.model.clusters.map((c) => ({
+      topTags: c.topTags,
+      share: c.share,
+      games: c.games,
+    })),
+  };
 });
 
 /**
@@ -126,14 +145,14 @@ async function enrichAndFilter(
 export const getBacklogRecs = cache(async (steamid: string): Promise<Recommendation[] | null> => {
   const analysis = await getAnalysis(steamid);
   if (!analysis) return null;
-  const recs = rankBacklog(analysis.model, analysis.owned, analysis.factsByAppid, 18);
+  const recs = rankBacklog(analysis.model, analysis.persona, analysis.owned, analysis.factsByAppid, 18);
   return enrichAndFilter(recs, (id) => analysis.factsByAppid.get(id), 12);
 });
 
 export const getLapsedRecs = cache(async (steamid: string): Promise<Recommendation[] | null> => {
   const analysis = await getAnalysis(steamid);
   if (!analysis) return null;
-  const recs = rankLapsed(analysis.model, analysis.owned, analysis.factsByAppid, analysis.nowMs, 12);
+  const recs = rankLapsed(analysis.model, analysis.persona, analysis.owned, analysis.factsByAppid, analysis.nowMs, 12);
   return enrichAndFilter(recs, (id) => analysis.factsByAppid.get(id), 8);
 });
 
@@ -153,7 +172,7 @@ export const getNewReleaseRecs = cache(async (steamid: string): Promise<Recommen
   const pool = await getFeaturedPool();
   const freshIds = new Set([...pool.newReleases, ...pool.comingSoon].map((c) => c.appid));
   const fresh = [...candidateFacts.values()].filter((f) => freshIds.has(f.appid));
-  const recs = rankNewReleases(analysis.model, fresh, analysis.ownedAppids, 18);
+  const recs = rankNewReleases(analysis.model, analysis.persona, fresh, analysis.ownedAppids, 18);
   // 후보 팩트는 SteamSpy 기반 — 표시 전 상점 정보(가격/설명/타입) 보강 + DLC 제거
   return enrichAndFilter(recs, (id) => candidateFacts.get(id), 12);
 });
@@ -189,7 +208,7 @@ export const getCoplayRecs = cache(async (steamid: string): Promise<CoplayAnchor
       })
       .filter((x): x is NonNullable<typeof x> => x !== null);
 
-    const recs = rankCoplay(analysis.model, scored, analysis.ownedAppids, 9);
+    const recs = rankCoplay(analysis.model, analysis.persona, scored, analysis.ownedAppids, 9);
     const enriched = await enrichAndFilter(recs, (id) => facts.get(id), 6);
     const anchorFacts = analysis.factsByAppid.get(anchorAppid);
     const anchorName =
@@ -227,6 +246,8 @@ export const getHiddenGemRecs = cache(async (steamid: string): Promise<Recommend
     for (const [id, f] of extra) poolFacts.set(id, f);
   }
 
-  const recs = rankHiddenGems(analysis.model, [...poolFacts.values()], analysis.ownedAppids, 15);
-  return enrichAndFilter(recs, (id) => poolFacts.get(id), 10);
+  // 탐험 픽이 마지막 슬롯에 위치하므로 랭킹 개수 = 표시 개수로 맞춘다
+  // (여유분을 두면 표시 컷에서 탐험 픽이 잘린다; DLC 제거로 다소 줄어드는 건 허용)
+  const recs = rankHiddenGems(analysis.model, analysis.persona, [...poolFacts.values()], analysis.ownedAppids, 11);
+  return enrichAndFilter(recs, (id) => poolFacts.get(id), 11);
 });
