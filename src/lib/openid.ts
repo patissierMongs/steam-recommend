@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 /**
  * Steam OpenID 2.0 로그인.
  * Steam은 OAuth를 제공하지 않고 OpenID 2.0(https://steamcommunity.com/openid)만 지원한다.
@@ -33,13 +35,34 @@ export function appBaseUrl(requestOrigin: string): string {
   return process.env.APP_BASE_URL || requestOrigin;
 }
 
-export function buildLoginUrl(baseUrl: string): string {
+export const LOGIN_STATE_COOKIE = "openid_state";
+export const LOGIN_STATE_MAX_AGE_SEC = 15 * 60;
+const STATE_RE = /^[A-Za-z0-9_-]{22,64}$/;
+
+export const loginStateCookieOptions = {
+  httpOnly: true,
+  sameSite: "lax",
+  secure: process.env.NODE_ENV === "production",
+  path: "/api/auth/steam",
+  maxAge: LOGIN_STATE_MAX_AGE_SEC,
+} as const;
+
+/** 로그인을 시작한 브라우저에만 심는 1회용 값. 콜백에서 쿠키와 return_to의 값이 같아야 통과한다. */
+export function createLoginState(): string {
+  return randomBytes(16).toString("base64url");
+}
+
+export function returnToUrl(baseUrl: string, state: string): string {
+  return `${baseUrl}/api/auth/steam/return?${new URLSearchParams({ state })}`;
+}
+
+export function buildLoginUrl(baseUrl: string, state: string): string {
   const params = new URLSearchParams({
     "openid.ns": OPENID_NS,
     "openid.mode": "checkid_setup",
     "openid.claimed_id": IDENTIFIER_SELECT,
     "openid.identity": IDENTIFIER_SELECT,
-    "openid.return_to": `${baseUrl}/api/auth/steam/return`,
+    "openid.return_to": returnToUrl(baseUrl, state),
     "openid.realm": baseUrl,
   });
   return `${STEAM_OPENID_ENDPOINT}?${params}`;
@@ -56,7 +79,12 @@ export function buildLoginUrl(baseUrl: string): string {
 export async function verifyCallback(
   searchParams: URLSearchParams,
   expectedBaseUrl: string,
+  expectedState: string | undefined,
 ): Promise<string | null> {
+  // 로그인 CSRF 방지: 이 브라우저가 시작한 로그인의 state 쿠키와 콜백 URL의 state가 같아야 한다.
+  if (!expectedState || !STATE_RE.test(expectedState)) return null;
+  if (searchParams.getAll("state").length !== 1 || searchParams.get("state") !== expectedState) return null;
+
   // 파라미터 중복 스머글링 차단: get()은 첫 값을 읽지만 재전송 body는 set()으로
   // 마지막 값이 이긴다 — 값이 갈리면 "검증된 값 ≠ 파싱한 값"이 되어 계정 위조가 가능.
   // openid.* 키가 두 번 이상 등장하면 무조건 거부한다.
@@ -67,7 +95,7 @@ export async function verifyCallback(
 
   if (searchParams.get("openid.mode") !== "id_res") return null;
   const returnTo = searchParams.get("openid.return_to");
-  if (returnTo !== `${expectedBaseUrl}/api/auth/steam/return`) return null;
+  if (returnTo !== returnToUrl(expectedBaseUrl, expectedState)) return null;
   const claimedId = searchParams.get("openid.claimed_id");
   const steamid = claimedId?.match(CLAIMED_ID_RE)?.[1];
   if (!steamid) return null;
@@ -86,7 +114,7 @@ export async function verifyCallback(
 
   // 받은 파라미터 전체를 mode만 바꿔 그대로 되돌려 보낸다 (OpenID 2.0 §11.4.2)
   const body = new URLSearchParams();
-  for (const [k, v] of searchParams) body.set(k, v);
+  for (const [k, v] of searchParams) if (k.startsWith("openid.")) body.set(k, v);
   body.set("openid.mode", "check_authentication");
 
   let res: Response;

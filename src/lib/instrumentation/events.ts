@@ -64,6 +64,8 @@ export interface RecommendationImpression {
    * 목록에 없는 appid는 그 시점에 메타데이터를 확보하지 못한 것이다.
    */
   appMetadata: AppMetadata[];
+  /** 표시 전에 상점 타입(게임/DLC 등)을 확인한 후보. 이 목록의 appMetadata.appType이 표시 제외 여부를 결정했다. */
+  storeCheckedAppids: number[];
   /** 결정적 랭킹이면 true — propensity가 없음을 "1"로 오해하지 않게 명시. */
   deterministic: boolean;
   items: ImpressionItem[];
@@ -162,6 +164,7 @@ export function buildImpression(params: {
   recommendations: readonly Recommendation[];
   candidateUniverse: Iterable<number>;
   metadata?: Iterable<GameFacts>;
+  storeCheckedAppids?: Iterable<number>;
   deterministic?: boolean;
 }): RecommendationImpression {
   const { subject, section, generatedAt, recommendations, candidateUniverse } = params;
@@ -179,6 +182,7 @@ export function buildImpression(params: {
     appMetadata: [...new Map([...(params.metadata ?? [])].map((f) => [f.appid, f])).values()]
       .sort((a, b) => a.appid - b.appid)
       .map(toAppMetadata),
+    storeCheckedAppids: [...new Set(params.storeCheckedAppids ?? [])].sort((a, b) => a - b),
     deterministic: params.deterministic ?? true,
     items: recommendations.map((r, i) => ({
       appid: r.appid,

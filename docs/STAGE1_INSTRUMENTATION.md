@@ -60,6 +60,7 @@ Stage 2(시간 정렬 risk set·ablation·calibration)에서만 판정에 쓰인
       appMetadata: [                   // 랭킹 시점 공개 메타데이터 (후보 ∪ 프로필 입력 게임)
         { appid, tags, genres, positive, negative, ownersEstimate, medianPlaytime, appType }
       ],
+      storeCheckedAppids: number[],    // 표시 전 상점 타입을 확인한 후보 (해당 appMetadata는 상점 정보 병합 후 값)
       deterministic: boolean,
       items: [
         { appid, position, score, tasteMatch, reviewLowerBound, propensity? }

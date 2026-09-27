@@ -131,9 +131,23 @@ async function enrichAndFilter(
   factsProvider: (appid: number) => GameFacts | undefined,
   displayLimit: number,
 ): Promise<Recommendation[]> {
+  return (await enrichAndFilterWithFacts(recs, factsProvider, displayLimit)).recs;
+}
+
+export interface EvaluatedRecs {
+  recs: Recommendation[];
+  /** 표시 전 상점 타입 확인을 거친 후보의 팩트(상점 정보 병합 후). 제외 사유 재현용. */
+  storeChecked: GameFacts[];
+}
+
+async function enrichAndFilterWithFacts(
+  recs: Recommendation[],
+  factsProvider: (appid: number) => GameFacts | undefined,
+  displayLimit: number,
+): Promise<EvaluatedRecs> {
   const enriched = await mapWithConcurrency(recs, 6, async (rec) => {
     const base = factsProvider(rec.appid);
-    if (!base) return { rec, keep: false };
+    if (!base) return { rec, keep: false, full: null };
     const full = await enrichWithStore(base);
     const merged: Recommendation = {
       ...rec,
@@ -145,28 +159,39 @@ async function enrichAndFilter(
       discountPercent: rec.discountPercent || full.discountPercent,
       isFree: rec.isFree || full.isFree,
     };
-    return { rec: merged, keep: isGameType(full.appType) };
+    return { rec: merged, keep: isGameType(full.appType), full };
   });
   const out: Recommendation[] = [];
+  const storeChecked: GameFacts[] = [];
   enriched.forEach((e) => {
-    if (e !== null && e.keep) out.push(e.rec);
+    if (e === null) return;
+    if (e.full) storeChecked.push(e.full);
+    if (e.keep) out.push(e.rec);
   });
-  return out.slice(0, displayLimit);
+  return { recs: out.slice(0, displayLimit), storeChecked };
 }
 
-export const getBacklogRecs = cache(async (steamid: string): Promise<Recommendation[] | null> => {
+export const getBacklogEvaluation = cache(async (steamid: string): Promise<EvaluatedRecs | null> => {
   const analysis = await getAnalysis(steamid);
   if (!analysis) return null;
   const recs = rankBacklog(analysis.model, analysis.owned, analysis.factsByAppid, 18);
-  return enrichAndFilter(recs, (id) => analysis.factsByAppid.get(id), 12);
+  return enrichAndFilterWithFacts(recs, (id) => analysis.factsByAppid.get(id), 12);
 });
 
-export const getLapsedRecs = cache(async (steamid: string): Promise<Recommendation[] | null> => {
+export const getBacklogRecs = cache(
+  async (steamid: string): Promise<Recommendation[] | null> => (await getBacklogEvaluation(steamid))?.recs ?? null,
+);
+
+export const getLapsedEvaluation = cache(async (steamid: string): Promise<EvaluatedRecs | null> => {
   const analysis = await getAnalysis(steamid);
   if (!analysis) return null;
   const recs = rankLapsed(analysis.model, analysis.owned, analysis.factsByAppid, analysis.nowMs, 12);
-  return enrichAndFilter(recs, (id) => analysis.factsByAppid.get(id), 8);
+  return enrichAndFilterWithFacts(recs, (id) => analysis.factsByAppid.get(id), 8);
 });
+
+export const getLapsedRecs = cache(
+  async (steamid: string): Promise<Recommendation[] | null> => (await getLapsedEvaluation(steamid))?.recs ?? null,
+);
 
 /** 신작/현재 라이브러리 밖 후보 풀의 팩트 (요청 내 공유; 서버 캐시는 appid 단위 fetcher가 담당) */
 const getCandidateFacts = cache(async (steamid: string): Promise<Map<number, GameFacts> | null> => {

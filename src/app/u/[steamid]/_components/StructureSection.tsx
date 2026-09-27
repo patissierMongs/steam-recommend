@@ -89,7 +89,7 @@ export async function StructureSection({ steamid }: { steamid: string }) {
               ? `ρ ${depth.reviewDepthCorr.spearman.toFixed(2)} (n=${depth.reviewDepthCorr.n})`
               : "표본 부족"
           }
-          hint="Spearman, 단일 계정 기술 통계 — 0에 가까우면 리뷰 점수는 이 계정의 플레이 깊이와 무관하게 움직입니다"
+          hint="Spearman 순위 상관, 이 계정의 선택된 표본에 대한 기술 통계입니다. 0에 가까우면 두 순위 사이의 단조 관계가 이 표본에서 약하다는 뜻일 뿐이며, 비선형 관계나 표본 불확실성은 배제하지 못합니다"
         />
       </div>
 

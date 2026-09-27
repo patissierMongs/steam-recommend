@@ -1,5 +1,5 @@
 import "server-only";
-import { getAnalysis, getBacklogRecs, getLapsedRecs } from "@/lib/analysis/pipeline";
+import { getAnalysis, getBacklogEvaluation, getLapsedEvaluation } from "@/lib/analysis/pipeline";
 import { backlogEligible, lapsedEligible } from "@/lib/analysis/recommend";
 import { buildImpression, buildSnapshot, recSectionElementId, subjectId, type RecSection } from "./events";
 import { getSink, instrumentationSalt } from "./sink";
@@ -39,7 +39,7 @@ export async function recordDashboardInstrumentation(steamid: string): Promise<E
       buildSnapshot(subject, new Date(analysis.nowMs).toISOString(), "auto", analysis.owned),
     );
 
-    const [backlog, lapsed] = await Promise.all([getBacklogRecs(steamid), getLapsedRecs(steamid)]);
+    const [backlog, lapsed] = await Promise.all([getBacklogEvaluation(steamid), getLapsedEvaluation(steamid)]);
     const generatedAt = new Date().toISOString();
     const targets: ExposureTarget[] = [];
 
@@ -60,10 +60,12 @@ export async function recordDashboardInstrumentation(steamid: string): Promise<E
       },
     ];
     const profileAppids = [...analysis.model.engagementWeights.keys()];
-    for (const { section, recs, universe } of sections) {
-      if (!recs) continue;
+    for (const { section, recs: evaluation, universe } of sections) {
+      if (!evaluation) continue;
+      const recs = evaluation.recs;
+      const checked = new Map(evaluation.storeChecked.map((f) => [f.appid, f]));
       const metadata = [...universe, ...profileAppids]
-        .map((appid) => analysis.factsByAppid.get(appid))
+        .map((appid) => checked.get(appid) ?? analysis.factsByAppid.get(appid))
         .filter((f): f is NonNullable<typeof f> => f !== undefined);
       const impression = buildImpression({
         subject,
@@ -72,6 +74,7 @@ export async function recordDashboardInstrumentation(steamid: string): Promise<E
         recommendations: recs,
         candidateUniverse: universe,
         metadata,
+        storeCheckedAppids: [...checked.keys()],
       });
       await sink.recordImpression(impression);
       if (recs.length > 0) {
