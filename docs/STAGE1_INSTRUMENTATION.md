@@ -57,6 +57,9 @@ Stage 2(시간 정렬 risk set·ablation·calibration)에서만 판정에 쓰인
       candidateUniverseSize: number,   // 랭킹 후보 풀 크기 (retrieval vs ranking 분리)
       candidateUniverseHash: string,   // 후보 집합 지문 (재현/누수 점검)
       candidateUniverse: number[],     // 정렬·중복 제거한 후보 appid 전체
+      appMetadata: [                   // 랭킹 시점 공개 메타데이터 (후보 ∪ 프로필 입력 게임)
+        { appid, tags, genres, positive, negative, ownersEstimate, medianPlaytime, appType }
+      ],
       deterministic: boolean,
       items: [
         { appid, position, score, tasteMatch, reviewLowerBound, propensity? }
@@ -70,6 +73,9 @@ Stage 2(시간 정렬 risk set·ablation·calibration)에서만 판정에 쓰인
 - **candidate universe를 ID 목록으로 기록**: 해시만으로는 카탈로그·조회 범위가 바뀐 뒤
   "무엇을 보일 수 있었나"를 복원할 수 없다. retrieval 실패와 ranker 실패를 나누고 baseline을
   재랭킹하려면 후보 ID 전체가 필요하다(VALIDATION.md 평가 프로토콜).
+- **랭킹 시점 메타데이터를 함께 기록**: SteamSpy 태그·리뷰 수·소유자 추정·상점 타입은 시간이
+  지나면 바뀐다. 나중 값으로 baseline을 다시 랭킹하면 미래 정보가 섞이므로, 후보와 프로필 입력
+  게임의 메타데이터를 그 시점 값으로 함께 남긴다. 게임 이름·설명은 넣지 않는다.
 - **빈 목록도 기록**: 평가했지만 후보가 없던 경우를 평가하지 않은 경우와 구분해야 coverage와
   실패율 추정이 편향되지 않는다.
 - **propensity**: 무작위/탐색 노출을 도입하면 그 확률을 기록해 Stage 2에서 IPS 등 불편
@@ -166,7 +172,8 @@ Stage 1의 성공 기준은 "추천이 좋다"가 아니라 **"Stage 2를 편향
   universe가 featured 피드·리뷰어 표본에 걸쳐 있어, 잘못된 universe를 기록하면 Stage 2
   risk set이 오염된다. 정확한 universe 추출이 마련될 때까지 기록하지 않는다
   (틀리게 기록하는 것보다 안 기록하는 쪽이 낫다).
-- [x] s1/v2: impression 시각을 목록 생성 직후로 분리(`generatedAt`), 후보 ID 전체 기록,
+- [x] s1/v2: impression 시각을 목록 생성 직후로 분리(`generatedAt`), 후보 ID 전체와 랭킹 시점
+  메타데이터(`appMetadata`) 기록, 가명화에 전용 `INSTRUMENTATION_SALT` 필수,
   빈 목록 기록, 클라이언트 확인 기반 노출 이벤트(`RecommendationExposure`) 추가,
   서버 수집이 꺼져 있으면 동의 패널에 그 사실을 표시
 - [ ] **다음 증분**: interaction(click) 기록, 중복 억제·쿼터, 보존·삭제 잡, 배포용 sink 선택

@@ -57,11 +57,20 @@ export class JsonlSink implements InstrumentationSink {
 }
 
 /**
- * opt-in 게이트. INSTRUMENTATION_ENABLED=1 일 때만 실제 sink를 돌려주고, 그 외에는 NullSink.
- * 동의 없이는 어떤 이벤트도 기록되지 않는다.
+ * opt-in 게이트. INSTRUMENTATION_ENABLED=1이고 전용 INSTRUMENTATION_SALT(16자 이상)가 있을 때만
+ * 실제 sink를 돌려주고, 그 외에는 NullSink. 동의 없이는 어떤 이벤트도 기록되지 않는다.
+ * salt를 세션 비밀과 공유하면 세션 비밀 교체 시 모든 subject가 바뀌어 종단 조인이 끊기므로
+ * 대체값을 쓰지 않는다.
  */
+export type InstrumentationStatus = "off" | "missing-salt" | "on";
+
+export function instrumentationStatus(): InstrumentationStatus {
+  if (process.env.INSTRUMENTATION_ENABLED !== "1") return "off";
+  return instrumentationSalt().length >= 16 ? "on" : "missing-salt";
+}
+
 export function instrumentationEnabled(): boolean {
-  return process.env.INSTRUMENTATION_ENABLED === "1";
+  return instrumentationStatus() === "on";
 }
 
 export function getSink(): InstrumentationSink {
@@ -70,7 +79,6 @@ export function getSink(): InstrumentationSink {
   return new JsonlSink(dir);
 }
 
-/** 가명화 salt — 전용 값 우선, 없으면 세션 비밀 재사용(둘 다 없으면 호출부에서 검증 실패). */
 export function instrumentationSalt(): string {
-  return process.env.INSTRUMENTATION_SALT || process.env.SESSION_SECRET || "";
+  return process.env.INSTRUMENTATION_SALT ?? "";
 }

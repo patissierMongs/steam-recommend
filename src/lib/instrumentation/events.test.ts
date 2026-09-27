@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { OwnedGame, Recommendation } from "@/lib/types";
+import type { GameFacts, OwnedGame, Recommendation } from "@/lib/types";
 import {
   buildExposure,
   buildImpression,
@@ -135,6 +135,44 @@ describe("buildImpression 빈 목록", () => {
   });
 });
 
+describe("buildImpression 메타데이터", () => {
+  it("랭킹 시점 메타데이터를 appid 순으로 복사해 기록하고 이후 원본 변경의 영향을 받지 않는다", () => {
+    const facts = (appid: number, votes: number) =>
+      ({
+        appid,
+        name: `g${appid}`,
+        tags: { Indie: votes },
+        genres: ["Indie"],
+        positive: 10,
+        negative: 1,
+        ownersEstimate: 10_000,
+        medianPlaytime: 0,
+        headerImage: "",
+        shortDescription: "",
+        releaseDate: "",
+        comingSoon: false,
+        isFree: false,
+        priceFormatted: null,
+        discountPercent: 0,
+        developers: [],
+        appType: "game",
+      }) as GameFacts;
+    const b = facts(40, 5);
+    const imp = buildImpression({
+      subject: "subj",
+      section: "backlog",
+      generatedAt: "2026-07-13T00:00:00Z",
+      recommendations: RECS,
+      candidateUniverse: [30, 40],
+      metadata: [b, facts(30, 3), b],
+    });
+    expect(imp.appMetadata.map((m) => m.appid)).toEqual([30, 40]);
+    b.tags.Indie = 999;
+    expect(imp.appMetadata[1].tags).toEqual({ Indie: 5 });
+    expect(imp.appMetadata[1]).not.toHaveProperty("name");
+  });
+});
+
 describe("buildExposure", () => {
   const base = { subject: "subj", exposedAt: "2026-07-13T00:00:05Z" };
   const id = "abcdefghijABCDEFGHIJ";
@@ -168,6 +206,20 @@ describe("sink", () => {
     await expect(
       sink.recordSnapshot(buildSnapshot("s", "2026-07-13T00:00:00Z", "auto", OWNED)),
     ).resolves.toBeUndefined();
+  });
+
+  it("수집을 켜도 전용 salt가 없으면 NullSink를 준다", () => {
+    const prevEnabled = process.env.INSTRUMENTATION_ENABLED;
+    const prevSalt = process.env.INSTRUMENTATION_SALT;
+    process.env.INSTRUMENTATION_ENABLED = "1";
+    delete process.env.INSTRUMENTATION_SALT;
+    expect(getSink()).toBeInstanceOf(NullSink);
+    process.env.INSTRUMENTATION_SALT = "dedicated-salt-0123456789";
+    expect(getSink()).toBeInstanceOf(JsonlSink);
+    if (prevEnabled === undefined) delete process.env.INSTRUMENTATION_ENABLED;
+    else process.env.INSTRUMENTATION_ENABLED = prevEnabled;
+    if (prevSalt === undefined) delete process.env.INSTRUMENTATION_SALT;
+    else process.env.INSTRUMENTATION_SALT = prevSalt;
   });
 
   it("getSink는 opt-in 없이는 NullSink를 준다", () => {

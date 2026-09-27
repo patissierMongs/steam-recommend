@@ -1,5 +1,5 @@
 import { createHmac, createHash } from "node:crypto";
-import type { OwnedGame, Recommendation } from "@/lib/types";
+import type { GameFacts, OwnedGame, Recommendation } from "@/lib/types";
 
 /**
  * Stage 1 instrumentation 이벤트 계약 (docs/STAGE1_INSTRUMENTATION.md).
@@ -58,9 +58,39 @@ export interface RecommendationImpression {
   candidateUniverseHash: string;
   /** 정렬·중복 제거한 후보 appid 전체. Stage 2 risk set 재구성용. */
   candidateUniverse: number[];
+  /**
+   * 랭킹 시점에 쓰인 공개 메타데이터 (후보 ∪ 프로필 입력 게임, appid 오름차순).
+   * 나중에 SteamSpy·상점 데이터가 바뀌어도 미래 정보 없이 baseline을 다시 랭킹할 수 있게 한다.
+   * 목록에 없는 appid는 그 시점에 메타데이터를 확보하지 못한 것이다.
+   */
+  appMetadata: AppMetadata[];
   /** 결정적 랭킹이면 true — propensity가 없음을 "1"로 오해하지 않게 명시. */
   deterministic: boolean;
   items: ImpressionItem[];
+}
+
+export interface AppMetadata {
+  appid: number;
+  tags: Record<string, number>;
+  genres: string[];
+  positive: number;
+  negative: number;
+  ownersEstimate: number;
+  medianPlaytime: number;
+  appType: string | null;
+}
+
+export function toAppMetadata(facts: GameFacts): AppMetadata {
+  return {
+    appid: facts.appid,
+    tags: { ...facts.tags },
+    genres: [...facts.genres],
+    positive: facts.positive,
+    negative: facts.negative,
+    ownersEstimate: facts.ownersEstimate,
+    medianPlaytime: facts.medianPlaytime,
+    appType: facts.appType,
+  };
 }
 
 /** 클라이언트가 카드의 화면 진입을 확인한 뒤 보낸 노출 확인. positions는 1부터 시작하는 순위. */
@@ -131,6 +161,7 @@ export function buildImpression(params: {
   generatedAt: string;
   recommendations: readonly Recommendation[];
   candidateUniverse: Iterable<number>;
+  metadata?: Iterable<GameFacts>;
   deterministic?: boolean;
 }): RecommendationImpression {
   const { subject, section, generatedAt, recommendations, candidateUniverse } = params;
@@ -145,6 +176,9 @@ export function buildImpression(params: {
     candidateUniverseSize: universe.length,
     candidateUniverseHash: candidateUniverseHash(universe),
     candidateUniverse: universe,
+    appMetadata: [...new Map([...(params.metadata ?? [])].map((f) => [f.appid, f])).values()]
+      .sort((a, b) => a.appid - b.appid)
+      .map(toAppMetadata),
     deterministic: params.deterministic ?? true,
     items: recommendations.map((r, i) => ({
       appid: r.appid,

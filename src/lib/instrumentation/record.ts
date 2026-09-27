@@ -59,14 +59,19 @@ export async function recordDashboardInstrumentation(steamid: string): Promise<E
           .map((g) => g.appid),
       },
     ];
+    const profileAppids = [...analysis.model.engagementWeights.keys()];
     for (const { section, recs, universe } of sections) {
       if (!recs) continue;
+      const metadata = [...universe, ...profileAppids]
+        .map((appid) => analysis.factsByAppid.get(appid))
+        .filter((f): f is NonNullable<typeof f> => f !== undefined);
       const impression = buildImpression({
         subject,
         section,
         generatedAt,
         recommendations: recs,
         candidateUniverse: universe,
+        metadata,
       });
       await sink.recordImpression(impression);
       if (recs.length > 0) {

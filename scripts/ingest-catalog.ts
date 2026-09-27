@@ -17,6 +17,7 @@
  */
 import { readFileSync } from "node:fs";
 import { CatalogStore } from "../src/lib/catalog/store.ts";
+import { parseOwnersMidpoint } from "../src/lib/analysis/stats.ts";
 
 const DB_PATH = process.env.CATALOG_DB || ".catalog/steam.db";
 const SPY_ALL_WAIT_MS = 60_000; // SteamSpy 문서상 request=all 은 60초당 1회
@@ -39,12 +40,11 @@ async function fetchJson(url: string): Promise<unknown> {
   return res.json();
 }
 
-/** SteamSpy "20,000 .. 50,000" → 기하평균 (stats.ts parseOwnersMidpoint와 동일 규칙) */
-function ownersMid(owners: string): number {
-  const nums = owners.match(/[\d,]+/g)?.map((x) => parseInt(x.replace(/,/g, ""), 10)).filter((x) => x > 0) ?? [];
-  if (nums.length === 0) return 0;
-  if (nums.length === 1) return nums[0];
-  return Math.round(Math.sqrt(nums[0] * nums[1]));
+function positiveArg(raw: string | undefined, fallback: number, min: number, label: string): number {
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) throw new Error(`${label}는 양의 유한수여야 합니다: ${raw}`);
+  return Math.max(min, n);
 }
 
 async function phaseApps(store: CatalogStore): Promise<void> {
@@ -97,7 +97,7 @@ async function phaseSpy(store: CatalogStore, pages: number): Promise<void> {
         name: r.name ?? "",
         positive: r.positive ?? 0,
         negative: r.negative ?? 0,
-        ownersMid: ownersMid(r.owners ?? ""),
+        ownersMid: parseOwnersMidpoint(r.owners ?? ""),
         ccu: r.ccu ?? 0,
         priceCents: parseInt(r.price ?? "0", 10) || 0,
         fetchedAt: now,
@@ -137,8 +137,8 @@ async function main(): Promise<void> {
   const store = new CatalogStore(DB_PATH);
   try {
     if (phase === "apps") await phaseApps(store);
-    else if (phase === "spy") await phaseSpy(store, Math.max(1, Number(arg ?? 1)));
-    else if (phase === "tags") await phaseTags(store, Math.max(10, Number(arg ?? 60)));
+    else if (phase === "spy") await phaseSpy(store, Math.floor(positiveArg(arg, 1, 1, "pages")));
+    else if (phase === "tags") await phaseTags(store, positiveArg(arg, 60, 10, "seconds"));
     else if (phase === "stats") {
       console.log(JSON.stringify({ db: DB_PATH, ...store.counts(), spyNextPage: store.getMeta("spy_next_page") }, null, 1));
     } else {
