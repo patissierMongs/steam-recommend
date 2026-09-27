@@ -51,12 +51,20 @@ export default function Home({ searchParams }: { searchParams: SearchParams }) {
             예: <code className="rounded bg-background px-1.5 py-0.5">76561197960434622</code> 또는{" "}
             <code className="rounded bg-background px-1.5 py-0.5">steamcommunity.com/id/닉네임</code>
           </p>
-          <a
-            href="/api/auth/steam"
-            className="rounded-lg border border-edge bg-raised px-4 py-2 font-medium text-foreground transition hover:border-accent"
-          >
-            Steam으로 로그인
-          </a>
+          <div className="flex shrink-0 gap-2">
+            <Link
+              href="/u/demo"
+              className="whitespace-nowrap rounded-lg border border-edge bg-raised px-4 py-2 font-medium text-foreground transition hover:border-accent"
+            >
+              데모로 둘러보기
+            </Link>
+            <a
+              href="/api/auth/steam"
+              className="whitespace-nowrap rounded-lg border border-edge bg-raised px-4 py-2 font-medium text-foreground transition hover:border-accent"
+            >
+              Steam으로 로그인
+            </a>
+          </div>
         </div>
       </section>
 

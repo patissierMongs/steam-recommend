@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getLibrary, getProfile } from "@/lib/analysis/pipeline";
 import { SESSION_COOKIE, verifySessionValue } from "@/lib/session";
 import { SteamApiError } from "@/lib/steam/webapi";
+import { isDemoId } from "@/lib/demo";
 
 const PERSONA_STATE = ["오프라인", "온라인", "바쁨", "자리 비움", "수면", "거래 희망", "플레이 희망"];
 
@@ -35,16 +36,25 @@ export async function ProfileHeader({ steamid }: { steamid: string }) {
         <p className="mt-0.5 text-xs text-muted">
           {PERSONA_STATE[profile.personastate] ?? "오프라인"}
           {gameCount !== null ? ` · 라이브러리 항목 ${gameCount.toLocaleString()}개` : ""}
-          {" · "}
-          <a
-            href={profile.profileurl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-accent hover:underline"
-          >
-            Steam 프로필 ↗
-          </a>
+          {isDemoId(steamid) ? null : (
+            <>
+              {" · "}
+              <a
+                href={profile.profileurl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-accent hover:underline"
+              >
+                Steam 프로필 ↗
+              </a>
+            </>
+          )}
         </p>
+        {isDemoId(steamid) ? (
+          <p className="mt-2 inline-block rounded-md border border-accent/40 bg-background px-2 py-1 text-[11px] text-accent">
+            데모 모드 · 가상 라이브러리입니다. 게임 메타데이터·리뷰만 Steam 공개 데이터를 사용합니다.
+          </p>
+        ) : null}
       </div>
       {isSelf ? (
         <form action="/api/auth/logout" method="POST">

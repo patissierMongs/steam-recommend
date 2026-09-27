@@ -11,7 +11,7 @@ import {
   SCHEMA_VERSION,
   subjectId,
 } from "./events";
-import { JsonlSink, NullSink, getSink } from "./sink";
+import { JsonlSink, NullSink, getSink, type InstrumentationSink } from "./sink";
 
 const SALT = "salt-with-enough-length-xyz";
 
@@ -121,7 +121,7 @@ describe("buildImpression", () => {
 
 describe("sink", () => {
   it("NullSink는 아무것도 하지 않고 성공한다", async () => {
-    const sink = new NullSink();
+    const sink: InstrumentationSink = new NullSink();
     await expect(
       sink.recordSnapshot(buildSnapshot("s", "2026-07-13T00:00:00Z", "auto", OWNED)),
     ).resolves.toBeUndefined();

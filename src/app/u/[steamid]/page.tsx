@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAnalysis, getProfile, getTasteSummary } from "@/lib/analysis/pipeline";
 import { SteamApiError } from "@/lib/steam/webapi";
+import { isProfileParam } from "@/lib/demo";
 import { ProfileHeader } from "./_components/ProfileHeader";
 import { TasteSection } from "./_components/TasteSection";
 import { StructureSection } from "./_components/StructureSection";
@@ -20,11 +21,9 @@ import { EmptyNote, Section, SectionSkeleton } from "./_components/Section";
 
 type Params = Promise<{ steamid: string }>;
 
-const STEAMID64_RE = /^\d{17}$/;
-
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { steamid } = await params;
-  if (!STEAMID64_RE.test(steamid)) return { title: "프로필 분석" };
+  if (!isProfileParam(steamid)) return { title: "프로필 분석" };
   try {
     const profile = await getProfile(steamid);
     return { title: profile ? `${profile.personaname}의 추천` : "프로필 분석" };
@@ -35,7 +34,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
 
 export default async function DashboardPage({ params }: { params: Params }) {
   const { steamid } = await params;
-  if (!STEAMID64_RE.test(steamid)) notFound();
+  if (!isProfileParam(steamid)) notFound();
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-8">

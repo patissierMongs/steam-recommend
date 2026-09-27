@@ -53,7 +53,7 @@ export async function getStoreApp(appid: number): Promise<AppDetails | null> {
   });
   if (!res.ok) throw new Error(`appdetails HTTP ${res.status} (appid ${appid})`);
   const body = await readJson<Record<string, { success: boolean; data?: AppDetails }>>(res, `appdetails ${appid}`);
-  const entry = body?.[String(appid)];
+  const entry = pickAppEntry(body, appid);
   if (!entry?.success || !entry.data) return null; // 상점에서 내려간 앱 — 확정적 없음
   const d = entry.data;
   // 캐시 엔트리를 작게 유지: 타입에 선언된 필드만 저장 (설명 HTML 등 제외)
@@ -73,6 +73,18 @@ export async function getStoreApp(appid: number): Promise<AppDetails | null> {
     price_overview: d.price_overview,
     recommendations: d.recommendations,
   };
+}
+
+export function pickAppEntry(
+  body: Record<string, { success: boolean; data?: AppDetails }> | null | undefined,
+  appid: number,
+): { success: boolean; data?: AppDetails } | undefined {
+  if (!body) return undefined;
+  const direct = body[String(appid)];
+  if (direct) return direct;
+  const entries = Object.values(body);
+  if (entries.length === 1 && entries[0]?.data?.steam_appid === appid) return entries[0];
+  return undefined;
 }
 
 /** 헤더 이미지는 appid로 결정되는 CDN 경로가 있어 상점 조회 없이도 구성 가능 */

@@ -4,11 +4,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTagHoldoutDiagnostic } from "@/lib/analysis/pipeline";
 import { SteamApiError } from "@/lib/steam/webapi";
+import { isProfileParam } from "@/lib/demo";
 import { ProfileHeader } from "../../_components/ProfileHeader";
 import { TagHoldoutReportView } from "../../_components/TagHoldoutReport";
 
 type Params = Promise<{ steamid: string }>;
-const STEAMID64_RE = /^\d{17}$/;
 
 export const metadata: Metadata = { title: "태그 마스킹 복원 진단" };
 
@@ -27,7 +27,7 @@ export default function TagHoldoutPage({ params }: { params: Params }) {
 
 async function readSteamid(params: Params): Promise<string> {
   const { steamid } = await params;
-  if (!STEAMID64_RE.test(steamid)) notFound();
+  if (!isProfileParam(steamid)) notFound();
   return steamid;
 }
 

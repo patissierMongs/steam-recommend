@@ -1,7 +1,7 @@
 import "server-only";
 import { cache } from "react";
 import type { CoplayAnchor, GameFacts, OwnedGame, Recommendation } from "@/lib/types";
-import { getOwnedGames, getPlayerSummary } from "@/lib/steam/webapi";
+import { getOwnedGames, getPlayerSummary, hasApiKey } from "@/lib/steam/webapi";
 import {
   enrichWithStore,
   getManyScoringFacts,
@@ -24,6 +24,7 @@ import { buildDepthProfile } from "@/lib/analysis/depth";
 import { buildTagComboProfile } from "@/lib/analysis/tag-combos";
 import { runTagHoldoutDiagnostic } from "@/lib/analysis/tag-holdout";
 import { mapWithConcurrency } from "@/lib/concurrency";
+import { DEMO_PROFILE, getDemoLibrary, isDemoId } from "@/lib/demo";
 
 /**
  * 요청 단위 오케스트레이션. React.cache로 같은 렌더 패스의 Suspense 섹션들이
@@ -37,8 +38,12 @@ export const BACKLOG_FETCH_CAP = 100;
 export const LAPSED_FETCH_CAP = 40;
 const SPY_CONCURRENCY = 6;
 
-export const getProfile = cache(getPlayerSummary);
-export const getLibrary = cache(getOwnedGames);
+export const getProfile = cache(async (steamid: string) =>
+  isDemoId(steamid) ? DEMO_PROFILE : getPlayerSummary(steamid),
+);
+export const getLibrary = cache(async (steamid: string) =>
+  isDemoId(steamid) ? getDemoLibrary() : getOwnedGames(steamid),
+);
 
 export interface LibraryAnalysis {
   owned: OwnedGame[];
@@ -185,6 +190,7 @@ export const RETRIEVAL_CANDIDATE_CAP = 100;
  */
 const getExpandedCandidateFacts = cache(
   async (steamid: string): Promise<Map<number, GameFacts> | null> => {
+    if (!hasApiKey()) return null;
     const analysis = await getAnalysis(steamid);
     if (!analysis) return null;
     const anchors = [...analysis.model.engagementWeights.entries()]

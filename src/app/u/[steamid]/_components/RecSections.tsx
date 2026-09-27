@@ -7,6 +7,7 @@ import {
   BACKLOG_FETCH_CAP,
   LAPSED_FETCH_CAP,
 } from "@/lib/analysis/pipeline";
+import { hasApiKey } from "@/lib/steam/webapi";
 import { EmptyNote, Section } from "./Section";
 import { GameCardGrid } from "./GameCard";
 
@@ -56,6 +57,15 @@ export async function LapsedSection({ steamid }: { steamid: string }) {
 }
 
 export async function CoplaySection({ steamid }: { steamid: string }) {
+  if (!hasApiKey()) {
+    return (
+      <Section title="리뷰어 라이브러리 동시출현">
+        <EmptyNote>
+          이 섹션은 리뷰어들의 공개 라이브러리를 조회해야 해서 서버에 STEAM_API_KEY가 있어야 계산됩니다.
+        </EmptyNote>
+      </Section>
+    );
+  }
   let anchors;
   try {
     anchors = await getCoplayRecs(steamid);
