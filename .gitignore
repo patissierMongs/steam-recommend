@@ -40,3 +40,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Stage 1 instrumentation runtime logs (raw library/events — never commit)
+.instrumentation/
+
+# 전체 카탈로그 SQLite (수집 산출물 — 커밋 금지)
+.catalog/
