@@ -5,8 +5,10 @@ const BASE = "https://app.example.com";
 const RETURN_TO = `${BASE}/api/auth/steam/return`;
 const STEAMID = "76561197960434622";
 
+let nonceSeq = 0;
 function freshNonce(): string {
-  return new Date().toISOString().replace(/\.\d{3}Z$/, "Z") + "abcdef";
+  nonceSeq += 1;
+  return new Date().toISOString().replace(/\.\d{3}Z$/, "Z") + `salt${nonceSeq}`;
 }
 
 function baseParams(over: Record<string, string> = {}): URLSearchParams {
@@ -33,6 +35,23 @@ describe("verifyCallback", () => {
   it("정상 assertion을 통과시킨다", async () => {
     mockSteam(true);
     expect(await verifyCallback(baseParams(), BASE)).toBe(STEAMID);
+  });
+
+  it("같은 assertion을 두 번 쓰면 두 번째는 거부한다 (nonce 재사용 방지)", async () => {
+    const spy = mockSteam(true);
+    const params = baseParams();
+    expect(await verifyCallback(new URLSearchParams(params), BASE)).toBe(STEAMID);
+    expect(await verifyCallback(new URLSearchParams(params), BASE)).toBeNull();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("검증에 실패한 nonce는 다시 시도할 수 있다", async () => {
+    const params = baseParams();
+    mockSteam(false);
+    expect(await verifyCallback(new URLSearchParams(params), BASE)).toBeNull();
+    vi.restoreAllMocks();
+    mockSteam(true);
+    expect(await verifyCallback(new URLSearchParams(params), BASE)).toBe(STEAMID);
   });
 
   it("Steam이 is_valid:false면 거부", async () => {

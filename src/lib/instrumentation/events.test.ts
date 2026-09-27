@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { OwnedGame, Recommendation } from "@/lib/types";
 import {
+  buildExposure,
   buildImpression,
   buildSnapshot,
   candidateUniverseHash,
@@ -94,12 +95,13 @@ describe("buildImpression", () => {
     const imp = buildImpression({
       subject: "subj",
       section: "backlog",
-      shownAt: "2026-07-13T00:00:00Z",
+      generatedAt: "2026-07-13T00:00:00Z",
       recommendations: RECS,
       candidateUniverse: [30, 40, 50, 50], // 중복 포함
     });
     expect(imp.modelVersion).toBe(MODEL_VERSION);
     expect(imp.candidateUniverseSize).toBe(3);
+    expect(imp.candidateUniverse).toEqual([30, 40, 50]);
     expect(imp.deterministic).toBe(true);
     expect(imp.items).toEqual([
       { appid: 30, position: 1, score: 1.5, tasteMatch: 0.8, reviewLowerBound: 0.9 },
@@ -111,11 +113,52 @@ describe("buildImpression", () => {
     const p = {
       subject: "subj",
       section: "backlog" as const,
-      shownAt: "2026-07-13T00:00:00Z",
+      generatedAt: "2026-07-13T00:00:00Z",
       recommendations: RECS,
       candidateUniverse: [30, 40],
     };
     expect(buildImpression(p).impressionId).toBe(buildImpression(p).impressionId);
+  });
+});
+
+describe("buildImpression 빈 목록", () => {
+  it("추천이 없어도 후보 universe와 함께 기록할 수 있다", () => {
+    const imp = buildImpression({
+      subject: "subj",
+      section: "lapsed",
+      generatedAt: "2026-07-13T00:00:00Z",
+      recommendations: [],
+      candidateUniverse: [50, 10],
+    });
+    expect(imp.items).toEqual([]);
+    expect(imp.candidateUniverse).toEqual([10, 50]);
+  });
+});
+
+describe("buildExposure", () => {
+  const base = { subject: "subj", exposedAt: "2026-07-13T00:00:05Z" };
+  const id = "abcdefghijABCDEFGHIJ";
+
+  it("유효한 입력은 정렬·중복 제거된 position으로 만든다", () => {
+    const ev = buildExposure({ ...base, input: { impressionId: id, section: "backlog", positions: [3, 1, 3] } });
+    expect(ev).toEqual({
+      schemaVersion: SCHEMA_VERSION,
+      impressionId: id,
+      subject: "subj",
+      section: "backlog",
+      exposedAt: base.exposedAt,
+      positions: [1, 3],
+    });
+  });
+
+  it("형식이 틀린 입력은 거부한다", () => {
+    expect(buildExposure({ ...base, input: null })).toBeNull();
+    expect(buildExposure({ ...base, input: { impressionId: "short", section: "backlog", positions: [1] } })).toBeNull();
+    expect(buildExposure({ ...base, input: { impressionId: id, section: "coplay", positions: [1] } })).toBeNull();
+    expect(buildExposure({ ...base, input: { impressionId: id, section: "backlog", positions: [] } })).toBeNull();
+    expect(buildExposure({ ...base, input: { impressionId: id, section: "backlog", positions: [0] } })).toBeNull();
+    expect(buildExposure({ ...base, input: { impressionId: id, section: "backlog", positions: [1.5] } })).toBeNull();
+    expect(buildExposure({ ...base, input: { impressionId: id, section: "backlog", positions: [51] } })).toBeNull();
   });
 });
 

@@ -9,6 +9,19 @@ const STEAM_OPENID_ENDPOINT = "https://steamcommunity.com/openid/login";
 const OPENID_NS = "http://specs.openid.net/auth/2.0";
 const IDENTIFIER_SELECT = "http://specs.openid.net/auth/2.0/identifier_select";
 const CLAIMED_ID_RE = /^https:\/\/steamcommunity\.com\/openid\/id\/(\d{17})$/;
+const NONCE_MAX_AGE_MS = 15 * 60 * 1000;
+
+/**
+ * 이미 사용한 response_nonce 캐시 (OpenID 2.0 §11.3 RP 측 재사용 방지).
+ * 서버 프로세스 메모리에만 있으므로 인스턴스가 여러 개면 인스턴스 사이 재사용은 막지 못한다.
+ */
+const usedNonces = new Map<string, number>();
+
+function pruneNonces(nowMs: number): void {
+  for (const [nonce, expiresAt] of usedNonces) {
+    if (expiresAt <= nowMs) usedNonces.delete(nonce);
+  }
+}
 
 /**
  * OpenID realm/return_to의 베이스 URL 결정.
@@ -65,21 +78,38 @@ export async function verifyCallback(
   const nonce = searchParams.get("openid.response_nonce");
   const isoMatch = nonce?.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/);
   const issuedAt = isoMatch ? Date.parse(isoMatch[0]) : NaN;
-  if (!Number.isFinite(issuedAt) || Math.abs(Date.now() - issuedAt) > 15 * 60 * 1000) return null;
+  const nowMs = Date.now();
+  if (!nonce || !Number.isFinite(issuedAt) || Math.abs(nowMs - issuedAt) > NONCE_MAX_AGE_MS) return null;
+  pruneNonces(nowMs);
+  if (usedNonces.has(nonce)) return null;
+  usedNonces.set(nonce, issuedAt + NONCE_MAX_AGE_MS);
 
   // 받은 파라미터 전체를 mode만 바꿔 그대로 되돌려 보낸다 (OpenID 2.0 §11.4.2)
   const body = new URLSearchParams();
   for (const [k, v] of searchParams) body.set(k, v);
   body.set("openid.mode", "check_authentication");
 
-  const res = await fetch(STEAM_OPENID_ENDPOINT, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-    cache: "no-store",
-    signal: AbortSignal.timeout(12_000), // Steam 장애 시 로그인 요청 무한 대기 방지
-  });
-  if (!res.ok) return null;
+  let res: Response;
+  try {
+    res = await fetch(STEAM_OPENID_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
+      cache: "no-store",
+      signal: AbortSignal.timeout(12_000), // Steam 장애 시 로그인 요청 무한 대기 방지
+    });
+  } catch (err) {
+    usedNonces.delete(nonce);
+    throw err;
+  }
+  if (!res.ok) {
+    usedNonces.delete(nonce);
+    return null;
+  }
   const text = await res.text();
-  return /is_valid\s*:\s*true/.test(text) ? steamid : null;
+  if (!/is_valid\s*:\s*true/.test(text)) {
+    usedNonces.delete(nonce);
+    return null;
+  }
+  return steamid;
 }

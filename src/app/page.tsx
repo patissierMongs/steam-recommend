@@ -84,7 +84,7 @@ export default function Home({ searchParams }: { searchParams: SearchParams }) {
           },
           {
             title: "리뷰어 라이브러리 동시출현",
-            body: "최다 플레이 게임의 긍정 리뷰어 공개 라이브러리에서 함께 관측된 후보를 찾는 편향된 표본 신호입니다.",
+            body: "관측 가중치 상위 게임을 긍정 리뷰한 유저들의 공개 라이브러리에서 함께 관측된 후보를 찾는 편향된 표본 신호입니다.",
           },
         ].map((f) => (
           <div key={f.title} className="rounded-xl border border-edge bg-surface p-5">

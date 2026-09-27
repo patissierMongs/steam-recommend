@@ -1,7 +1,12 @@
 import "server-only";
 import { appendFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import type { LibrarySnapshot, RecommendationImpression, RecommendationInteraction } from "./events";
+import type {
+  LibrarySnapshot,
+  RecommendationExposure,
+  RecommendationImpression,
+  RecommendationInteraction,
+} from "./events";
 
 /**
  * Stage 1 이벤트 저장 (docs/STAGE1_INSTRUMENTATION.md).
@@ -12,6 +17,7 @@ import type { LibrarySnapshot, RecommendationImpression, RecommendationInteracti
 export interface InstrumentationSink {
   recordSnapshot(event: LibrarySnapshot): Promise<void>;
   recordImpression(event: RecommendationImpression): Promise<void>;
+  recordExposure(event: RecommendationExposure): Promise<void>;
   recordInteraction(event: RecommendationInteraction): Promise<void>;
 }
 
@@ -19,6 +25,7 @@ export interface InstrumentationSink {
 export class NullSink implements InstrumentationSink {
   async recordSnapshot(): Promise<void> {}
   async recordImpression(): Promise<void> {}
+  async recordExposure(): Promise<void> {}
   async recordInteraction(): Promise<void> {}
 }
 
@@ -41,6 +48,9 @@ export class JsonlSink implements InstrumentationSink {
   recordImpression(event: RecommendationImpression): Promise<void> {
     return this.append("impressions.jsonl", event);
   }
+  recordExposure(event: RecommendationExposure): Promise<void> {
+    return this.append("exposures.jsonl", event);
+  }
   recordInteraction(event: RecommendationInteraction): Promise<void> {
     return this.append("interactions.jsonl", event);
   }
@@ -50,8 +60,12 @@ export class JsonlSink implements InstrumentationSink {
  * opt-in 게이트. INSTRUMENTATION_ENABLED=1 일 때만 실제 sink를 돌려주고, 그 외에는 NullSink.
  * 동의 없이는 어떤 이벤트도 기록되지 않는다.
  */
+export function instrumentationEnabled(): boolean {
+  return process.env.INSTRUMENTATION_ENABLED === "1";
+}
+
 export function getSink(): InstrumentationSink {
-  if (process.env.INSTRUMENTATION_ENABLED !== "1") return new NullSink();
+  if (!instrumentationEnabled()) return new NullSink();
   const dir = process.env.INSTRUMENTATION_DIR || join(process.cwd(), ".instrumentation");
   return new JsonlSink(dir);
 }

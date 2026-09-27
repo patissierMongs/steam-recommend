@@ -1,4 +1,4 @@
-import { getStructureProfiles } from "@/lib/analysis/pipeline";
+import { getStructureProfiles, PROFILE_TOP_PLAYED, STRUCTURE_UNPLAYED_TYPE_CAP } from "@/lib/analysis/pipeline";
 import type { DepthPoint } from "@/lib/analysis/depth";
 import { Section } from "./Section";
 
@@ -100,8 +100,8 @@ export async function StructureSection({ steamid }: { steamid: string }) {
           points={depth.deepNiche}
         />
         <DepthList
-          title="고인지 · 이른 이탈"
-          note="소유자 추정이 중앙값을 넘는 유명 게임인데, 리뷰어 표본 중앙값에 못 미치고 멈춘 항목."
+          title="고인지 · 리뷰어 중앙값 미만 플레이"
+          note="소유자 추정이 중앙값을 넘는 유명 게임 중 누적 플레이가 리뷰어 표본 중앙값보다 짧은 항목. 플레이를 그만뒀는지는 판단하지 않습니다(지금 진행 중인 게임도 포함될 수 있음)."
           points={depth.shallowMainstream}
         />
       </div>
@@ -172,9 +172,11 @@ export async function StructureSection({ steamid }: { steamid: string }) {
               <strong className="text-foreground">
                 {depth.launchReviewGap.unplayedMedianWlb.toFixed(2)}
               </strong>
-              입니다. 두 값이 비슷하다면, 이 계정에서 리뷰 점수는 실행 여부를 가르는 관측
-              신호가 아닙니다 — 현재 추천 수식의 리뷰 가중치(0.35)가 개인화 신호인지 일반 품질
-              사전인지는 시간 분리 평가로만 판정합니다.
+              입니다. 두 쪽 모두 전체 라이브러리가 아니라 조회 예산 안에서 상점 정보가 확인된
+              게임만 셉니다. 실행 쪽은 주로 누적 플레이 상위 {PROFILE_TOP_PLAYED}개, 미실행 쪽은
+              AppID 내림차순 최대 {STRUCTURE_UNPLAYED_TYPE_CAP}개에서 나온 표본이라, 표본 규칙이
+              바뀌면 결과도 달라질 수 있습니다. 그래서 이 차이로 리뷰 점수가 실행 여부와 관계있는지는
+              해석하지 않습니다.
             </p>
           ) : (
             <p className="mt-3 text-xs text-muted">비교할 리뷰 표본이 부족합니다.</p>

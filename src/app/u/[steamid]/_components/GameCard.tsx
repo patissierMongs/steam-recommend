@@ -52,9 +52,10 @@ function Badges({ rec }: { rec: Recommendation }) {
   );
 }
 
-export function GameCard({ rec }: { rec: Recommendation }) {
+export function GameCard({ rec, position }: { rec: Recommendation; position?: number }) {
   return (
     <a
+      data-rec-position={position}
       href={`https://store.steampowered.com/app/${rec.appid}/`}
       target="_blank"
       rel="noreferrer"
@@ -101,8 +102,8 @@ export function GameCard({ rec }: { rec: Recommendation }) {
 export function GameCardGrid({ recs }: { recs: Recommendation[] }) {
   return (
     <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
-      {recs.map((rec) => (
-        <GameCard key={rec.appid} rec={rec} />
+      {recs.map((rec, i) => (
+        <GameCard key={rec.appid} rec={rec} position={i + 1} />
       ))}
     </div>
   );

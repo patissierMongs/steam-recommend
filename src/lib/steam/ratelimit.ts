@@ -20,9 +20,9 @@ function makeThrottle(minIntervalMs: number): () => Promise<void> {
 }
 
 /** SteamSpy: 공식 권고는 1 req/s. 캐시 전제하에 완만히 접근 + 429 시 백오프로 흡수 */
-export const throttleSteamSpy = makeThrottle(600);
+export const throttleSteamSpy = makeThrottle(1000);
 /** Steam Store API(appdetails 등): 대략 200 req/5min(≈1.5s) IP 한도 */
-export const throttleStore = makeThrottle(500);
+export const throttleStore = makeThrottle(1500);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

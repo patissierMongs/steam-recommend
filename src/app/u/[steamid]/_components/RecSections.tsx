@@ -8,6 +8,7 @@ import {
   LAPSED_FETCH_CAP,
 } from "@/lib/analysis/pipeline";
 import { hasApiKey } from "@/lib/steam/webapi";
+import { recSectionElementId } from "@/lib/instrumentation/events";
 import { EmptyNote, Section } from "./Section";
 import { GameCardGrid } from "./GameCard";
 
@@ -26,6 +27,7 @@ export async function BacklogSection({ steamid }: { steamid: string }) {
   if (!recs) return null;
   return (
     <Section
+      id={recSectionElementId("backlog")}
       title="백로그에서 추천"
       subtitle={`2시간 미만 기록 항목 중 외부 조회 예산상 AppID 내림차순 최대 ${BACKLOG_FETCH_CAP}개만 평가해, 확보된 태그 코사인과 리뷰 긍정률 Wilson 하한으로 정렬한 검증 전 기준선입니다. AppID는 취득 시각을 뜻하지 않습니다.`}
     >
@@ -48,6 +50,7 @@ export async function LapsedSection({ steamid }: { steamid: string }) {
   if (!recs || recs.length === 0) return null;
   return (
     <Section
+      id={recSectionElementId("lapsed")}
       title="다시 잡을 게임"
       subtitle={`2~40시간 기록 후 6개월 이상 최근 실행이 없는 항목 중 누적시간 내림차순 최대 ${LAPSED_FETCH_CAP}개만 평가해, 확보된 태그·리뷰 신호로 정렬한 검증 전 기준선입니다. 완료 여부나 만족도는 추론하지 않습니다.`}
     >
@@ -76,7 +79,7 @@ export async function CoplaySection({ steamid }: { steamid: string }) {
   return (
     <Section
       title="리뷰어 라이브러리 동시출현"
-      subtitle="당신의 최다 플레이 게임을 긍정 리뷰한 유저들의 공개 라이브러리에서, 전역 인기도로 완만히 보정해 함께 관측된 현재 라이브러리 밖 게임을 골랐습니다(표본 기반 근사)."
+      subtitle="관측 가중치(누적 시간의 log 감쇠 × 게임별 중앙값 대비 비율 × 최근성 감쇠)가 가장 높은 게임 3개를 긍정 리뷰한 유저들의 공개 라이브러리에서, 전역 인기도로 완만히 보정해 함께 관측된 현재 라이브러리 밖 게임을 골랐습니다(표본 기반 근사)."
     >
       <div className="space-y-8">
         {anchors.map((anchor) => (

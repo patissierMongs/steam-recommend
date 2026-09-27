@@ -92,8 +92,15 @@ export function smoothedLogLift(coCount: number, sampleSize: number, baseRate: n
 
 /** SteamSpy "20,000 .. 50,000" 형식의 소유자 구간 → 기하평균 추정치 */
 export function parseOwnersMidpoint(owners: string): number {
-  const nums = owners.match(/[\d,]+/g)?.map((x) => parseInt(x.replace(/,/g, ""), 10)).filter((x) => x > 0) ?? [];
+  const nums =
+    owners
+      .match(/\d[\d,]*/g)
+      ?.map((x) => parseInt(x.replace(/,/g, ""), 10))
+      .filter((x) => Number.isFinite(x) && x >= 0) ?? [];
   if (nums.length === 0) return 0;
   if (nums.length === 1) return nums[0];
-  return Math.round(Math.sqrt(nums[0] * nums[1])); // 구간의 기하평균 (로그 스케일 중앙)
+  const [low, high] = nums;
+  if (high <= 0) return 0;
+  if (low <= 0) return Math.round(high / 2); // 0에서 시작하는 최하위 구간은 기하평균이 정의되지 않아 산술 중앙값을 쓴다
+  return Math.round(Math.sqrt(low * high)); // 구간의 기하평균 (로그 스케일 중앙)
 }

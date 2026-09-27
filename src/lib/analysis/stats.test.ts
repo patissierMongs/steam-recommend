@@ -136,6 +136,11 @@ describe("parseOwnersMidpoint", () => {
     expect(parseOwnersMidpoint("1,000,000")).toBe(1_000_000);
   });
 
+  it("0에서 시작하는 최하위 구간은 산술 중앙값", () => {
+    expect(parseOwnersMidpoint("0 .. 20,000")).toBe(10_000);
+    expect(parseOwnersMidpoint("0 .. 0")).toBe(0);
+  });
+
   it("파싱 불가면 0", () => {
     expect(parseOwnersMidpoint("")).toBe(0);
     expect(parseOwnersMidpoint("unknown")).toBe(0);

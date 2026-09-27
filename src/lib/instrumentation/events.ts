@@ -8,7 +8,7 @@ import type { OwnedGame, Recommendation } from "@/lib/types";
  * 않고 관측 로그만 구성한다. 스키마 변경은 SCHEMA_VERSION을 올리고 기존 로그를 불변으로 둔다.
  */
 
-export const SCHEMA_VERSION = "s1/v1";
+export const SCHEMA_VERSION = "s1/v2";
 
 /** 노출을 만든 제품 랭커 버전 (검증된 가중치가 아닌 휴리스틱: 0.40·z(taste)+0.35·z(review)). */
 export const MODEL_VERSION = "rank-tag-review/z-heuristic-v1";
@@ -41,18 +41,36 @@ export interface ImpressionItem {
   propensity?: number;
 }
 
+/**
+ * 서버가 랭킹을 만들어 응답에 실은 목록. 사용자가 실제로 봤다는 뜻이 아니다 —
+ * 노출은 클라이언트가 화면 진입을 확인한 뒤 보내는 RecommendationExposure로만 기록한다.
+ * items가 비어 있어도 기록한다(평가했지만 후보가 없던 경우와 평가하지 않은 경우를 구분).
+ */
 export interface RecommendationImpression {
   schemaVersion: string;
   impressionId: string;
   subject: string;
-  shownAt: string;
+  /** 랭킹이 끝난 직후의 서버 시각. 스냅샷 capturedAt과 분리한다. */
+  generatedAt: string;
   modelVersion: string;
   section: RecSection;
   candidateUniverseSize: number;
   candidateUniverseHash: string;
+  /** 정렬·중복 제거한 후보 appid 전체. Stage 2 risk set 재구성용. */
+  candidateUniverse: number[];
   /** 결정적 랭킹이면 true — propensity가 없음을 "1"로 오해하지 않게 명시. */
   deterministic: boolean;
   items: ImpressionItem[];
+}
+
+/** 클라이언트가 카드의 화면 진입을 확인한 뒤 보낸 노출 확인. positions는 1부터 시작하는 순위. */
+export interface RecommendationExposure {
+  schemaVersion: string;
+  impressionId: string;
+  subject: string;
+  section: RecSection;
+  exposedAt: string;
+  positions: number[];
 }
 
 export interface RecommendationInteraction {
@@ -80,9 +98,9 @@ export function candidateUniverseHash(appids: Iterable<number>): string {
   return createHash("sha256").update(sorted.join(",")).digest("base64url").slice(0, 16);
 }
 
-function impressionId(subject: string, section: RecSection, shownAt: string): string {
+function impressionId(subject: string, section: RecSection, generatedAt: string): string {
   return createHash("sha256")
-    .update(`${subject}|${section}|${shownAt}|${MODEL_VERSION}`)
+    .update(`${subject}|${section}|${generatedAt}|${MODEL_VERSION}`)
     .digest("base64url")
     .slice(0, 20);
 }
@@ -110,22 +128,23 @@ export function buildSnapshot(
 export function buildImpression(params: {
   subject: string;
   section: RecSection;
-  shownAt: string;
+  generatedAt: string;
   recommendations: readonly Recommendation[];
   candidateUniverse: Iterable<number>;
   deterministic?: boolean;
 }): RecommendationImpression {
-  const { subject, section, shownAt, recommendations, candidateUniverse } = params;
-  const universe = [...candidateUniverse];
+  const { subject, section, generatedAt, recommendations, candidateUniverse } = params;
+  const universe = [...new Set(candidateUniverse)].sort((a, b) => a - b);
   return {
     schemaVersion: SCHEMA_VERSION,
-    impressionId: impressionId(subject, section, shownAt),
+    impressionId: impressionId(subject, section, generatedAt),
     subject,
-    shownAt,
+    generatedAt,
     modelVersion: MODEL_VERSION,
     section,
-    candidateUniverseSize: new Set(universe).size,
+    candidateUniverseSize: universe.length,
     candidateUniverseHash: candidateUniverseHash(universe),
+    candidateUniverse: universe,
     deterministic: params.deterministic ?? true,
     items: recommendations.map((r, i) => ({
       appid: r.appid,
@@ -135,4 +154,35 @@ export function buildImpression(params: {
       reviewLowerBound: r.breakdown.reviewLowerBound,
     })),
   };
+}
+
+export const EXPOSURE_SECTIONS: readonly RecSection[] = ["backlog", "lapsed"];
+const IMPRESSION_ID_RE = /^[A-Za-z0-9_-]{20}$/;
+const MAX_POSITION = 50;
+
+/** 클라이언트 입력을 검증해 노출 이벤트를 만든다. 형식이 틀리면 null. */
+export function buildExposure(params: {
+  subject: string;
+  exposedAt: string;
+  input: unknown;
+}): RecommendationExposure | null {
+  const input = params.input as { impressionId?: unknown; section?: unknown; positions?: unknown } | null;
+  if (!input || typeof input !== "object") return null;
+  const { impressionId: id, section, positions } = input;
+  if (typeof id !== "string" || !IMPRESSION_ID_RE.test(id)) return null;
+  if (typeof section !== "string" || !EXPOSURE_SECTIONS.includes(section as RecSection)) return null;
+  if (!Array.isArray(positions) || positions.length === 0 || positions.length > MAX_POSITION) return null;
+  if (!positions.every((p) => Number.isInteger(p) && p >= 1 && p <= MAX_POSITION)) return null;
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    impressionId: id,
+    subject: params.subject,
+    section: section as RecSection,
+    exposedAt: params.exposedAt,
+    positions: [...new Set(positions as number[])].sort((a, b) => a - b),
+  };
+}
+
+export function recSectionElementId(section: RecSection): string {
+  return `rec-${section}`;
 }

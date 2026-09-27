@@ -3,14 +3,16 @@ import type { ReactNode } from "react";
 export function Section({
   title,
   subtitle,
+  id,
   children,
 }: {
   title: string;
   subtitle?: string;
+  id?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="mt-10">
+    <section id={id} className="mt-10">
       <h2 className="text-xl font-bold tracking-tight">{title}</h2>
       {subtitle ? <p className="mt-1 text-xs leading-5 text-muted">{subtitle}</p> : null}
       <div className="mt-4">{children}</div>
